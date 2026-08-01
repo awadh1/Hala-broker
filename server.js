@@ -10,9 +10,30 @@ const http = require('http');
 const { WebSocketServer, createWebSocketStream } = require('ws');
 const { Aedes } = require('aedes');
 
+// شبكة أمان: أي خطأ برمجي غير متوقع بأي مكان بالسيرفر يُسجَّل بس،
+// وما يوقف البرنامج كامل. بدون هذا، أول خطأ غريب (رسالة فاسدة،
+// انقطاع غير متوقع) يطفّي السيرفر على كل المتصلين مرة وحدة —
+// وهذا أخطر شي وقت عرض حي قدام ناس.
+process.on('uncaughtException', (err) => {
+  console.error('[خطأ غير متوقع — تم تجاهله عشان السيرفر يكمل]', err && err.message);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[وعد مرفوض غير متوقع — تم تجاهله]', err && err.message);
+});
+
+const MAX_PAYLOAD = 128 * 1024; // ١٢٨ كيلوبايت — أكثر من كافي لأي رسالة نصية، يمنع إساءة استخدام الذاكرة
+
 async function main() {
   const aedes = await Aedes.createBroker();
   const PORT = process.env.PORT || 4001;
+
+  // نرفض أي رسالة أكبر من الحد المسموح قبل ما توصل لباقي المتصلين
+  aedes.authorizePublish = (client, packet, callback) => {
+    if (packet.payload && packet.payload.length > MAX_PAYLOAD) {
+      return callback(new Error('الرسالة أكبر من الحد المسموح'));
+    }
+    callback(null);
+  };
 
   // فحص صحة بسيط — Render (وأي مراقب خارجي) يستخدمه يتأكد إن السيرفر حي
   const httpServer = http.createServer((req, res) => {
@@ -23,6 +44,9 @@ async function main() {
   const wss = new WebSocketServer({ server: httpServer });
   wss.on('connection', (websocket, req) => {
     const stream = createWebSocketStream(websocket);
+    // اتصال واحد يفشل ما لازم يأثر على البرنامج كامل ولا على باقي المتصلين
+    websocket.on('error', () => {});
+    stream.on('error', () => {});
     aedes.handle(stream, req);
   });
 
