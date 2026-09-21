@@ -332,6 +332,58 @@ async function main() {
       return;
   }
 
+    if (req.method === 'POST' && req.url === '/study/add') {
+      var chunksSA = [];
+      req.on('data', function (c) { chunksSA.push(c); if (Buffer.concat(chunksSA).length > 60000) req.destroy(); });
+      req.on('end', function () {
+        var body;
+        try { body = JSON.parse(Buffer.concat(chunksSA).toString('utf8') || '{}'); } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'صيغة غير صحيحة' })); return;
+        }
+        if (!process.env.ADMIN_KEY || body.key !== process.env.ADMIN_KEY) {
+          res.writeHead(403, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ممنوع' })); return;
+        }
+        var subject = String(body.subject || '').trim();
+        var text = String(body.text || '').trim().slice(0, 4000);
+        if (!STUDY_SUBJECTS[subject] || !text) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'بيانات ناقصة' })); return; }
+        addStudyChunk(subject, text).then(function () {
+          res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
+        }).catch(function () {
+          res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما قدرنا نحفظ' }));
+        });
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/study/ask') {
+      var chunksSQ = [];
+      req.on('data', function (c) { chunksSQ.push(c); if (Buffer.concat(chunksSQ).length > 4000) req.destroy(); });
+      req.on('end', function () {
+        var body;
+        try { body = JSON.parse(Buffer.concat(chunksSQ).toString('utf8') || '{}'); } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'صيغة غير صحيحة' })); return;
+        }
+        var subject = String(body.subject || '').trim();
+        var question = String(body.question || '').trim().slice(0, 1200);
+        if (!STUDY_SUBJECTS[subject]) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'مادة غير معروفة' })); return; }
+        if (!question) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما فيه سؤال' })); return; }
+        var who = 'study:' + subject;
+        var now = Date.now();
+        var list = (AQUA_LIMIT[who] = (AQUA_LIMIT[who] || []).filter(function (t) { return now - t < 60000; }));
+        if (list.length >= 12) {
+          res.writeHead(429, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'أسئلة كثيرة بوقت قصير، انتظر شوي' })); return;
+        }
+        list.push(now);
+        loadStudyChunks(subject).then(function (chunks) {
+          var picked = pickRelevantChunks(chunks, question, 3);
+          var context = picked.length ? ('مقاطع من مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
+          var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما فيه مقاطع مخزّنة مرتبطة بهالسؤال بعد، جاوب بمعرفتك العامة عن المادة ونبّه الطالب إن هذا مو من الملفات المرفوعة.');
+          callGemini(sys, context + 'سؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject]);
+        });
+      });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/report') {
       var chunksR = [];
       req.on('data', function (c) { chunksR.push(c); if (Buffer.concat(chunksR).length > 4000) req.destroy(); });
