@@ -129,6 +129,30 @@ async function main() {
     'وأعضاء المجموعة غالباً طلاب صغار. رد بالعربي (لهجة خليجية بسيطة)، بإيجاز شديد ' +
     '(سطر أو سطرين بس)، وابق دايماً بحدود تخصصك المذكور تحت — لو أحد سألك شي بره ' +
     'تخصصك، اعتذر بلطف وقول له تخصصك وش هو، بدون ما تحاول تجاوب على كل شي.';
+  // المساعد الدراسي — كل مادة عندها مجموعة "مقاطع" نصية مخزّنة (من
+  // كتب/مذكرات)، وبحث بسيط بالكلمات المفتاحية (بدون قاعدة بيانات متجهية
+  // معقدة) يلقط أقرب ٣ مقاطع للسؤال ويرفقهم مع السؤال لجيميناي.
+  var STUDY_SUBJECTS = { math: 'الرياضيات', science: 'العلوم', english: 'اللغة الإنجليزية', arabic: 'اللغة العربية', social: 'الاجتماعيات', islamic: 'التربية الإسلامية' };
+  var STUDY_BASE_SYSTEM = 'أنت مساعد دراسي يشرح للطلاب بأسلوب واضح وودود، مو بس يعطي جواب جاف. ' +
+    'اعتمد على المقاطع المرفقة لك (لو وُجدت) كمرجع أساسي لإجابتك، واشرح بكلماتك أنت.';
+  var MEM_STUDY = {};
+  function addStudyChunk(subject, text) {
+    if (redisClient) return redisClient.rpush('study:' + subject, text);
+    MEM_STUDY[subject] = MEM_STUDY[subject] || []; MEM_STUDY[subject].push(text); return Promise.resolve();
+  }
+  function loadStudyChunks(subject) {
+    if (redisClient) return redisClient.lrange('study:' + subject, 0, -1);
+    return Promise.resolve((MEM_STUDY[subject] || []).slice());
+  }
+  function pickRelevantChunks(chunks, question, topN) {
+    var words = question.replace(/[^\u0600-\u06FF\w\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; });
+    var scored = chunks.map(function (c) {
+      var score = 0; words.forEach(function (w) { if (c.indexOf(w) >= 0) score++; }); return { c: c, score: score };
+    });
+    scored.sort(function (a, b) { return b.score - a.score; });
+    return scored.filter(function (s) { return s.score > 0; }).slice(0, topN).map(function (s) { return s.c; });
+  }
+
   var BOT_SPECIALTIES = {
     poetry: { name: 'بوت الشعر والأدب', prompt: 'تخصصك: الشعر والأدب العربي. تساعد تشرح أبيات، تقترح قوافي، تحلل معنى قصيدة، أو تناقش أسلوب كاتب.' },
     math: { name: 'بوت الرياضيات', prompt: 'تخصصك: الرياضيات. تساعد تحل مسائل، تشرح خطوات الحل بوضوح، وتراجع إجابات الطلاب.' },
