@@ -13,10 +13,6 @@ const aedesPersistenceRedis = require('aedes-persistence-redis');
 const Redis = require('ioredis');
 const webpush = require('web-push');
 
-// شبكة أمان: أي خطأ برمجي غير متوقع بأي مكان بالسيرفر يُسجَّل بس،
-// وما يوقف البرنامج كامل. بدون هذا، أول خطأ غريب (رسالة فاسدة،
-// انقطاع غير متوقع) يطفّي السيرفر على كل المتصلين مرة وحدة —
-// وهذا أخطر شي وقت عرض حي قدام ناس.
 process.on('uncaughtException', (err) => {
   console.error('[خطأ غير متوقع — تم تجاهله عشان السيرفر يكمل]', err && err.message);
 });
@@ -24,13 +20,9 @@ process.on('unhandledRejection', (err) => {
   console.error('[وعد مرفوض غير متوقع — تم تجاهله]', err && err.message);
 });
 
-const MAX_PAYLOAD = 128 * 1024; // ١٢٨ كيلوبايت — أكثر من كافي لأي رسالة نصية، يمنع إساءة استخدام الذاكرة
+const MAX_PAYLOAD = 128 * 1024;
 
 async function main() {
-  // لو فيه رابط Redis (REDIS_URL) بمتغيرات البيئة، نستخدمه كذاكرة دائمة —
-  // الحسابات وسجل الرسائل يبقون حتى لو السيرفر أعاد التشغيل أو نام وصحى.
-  // بدونه، يشتغل بالذاكرة المؤقتة العادية (يُمسح كل إعادة تشغيل) —
-  // مفيد للتجربة المحلية، بس مو للاستخدام الحقيقي.
   var persistence;
   var redisClient = null;
   if (process.env.REDIS_URL) {
@@ -42,9 +34,6 @@ async function main() {
     console.log('⚠️  ما فيه REDIS_URL — شغّال بذاكرة مؤقتة، كل شي ينمسح عند إعادة التشغيل');
   }
 
-  // تخزين اشتراكات التنبيهات (push): username -> subscription. لو عندنا
-  // Redis نحفظها فيه (تبقى بعد إعادة التشغيل)، وإلا بالذاكرة المؤقتة —
-  // بس تنمسح عند إعادة التشغيل، نفس أي شي ثاني بدون Redis.
   var MEM_PUSH = {};
   function savePushSub(username, sub) {
     if (redisClient) return redisClient.set('push:' + username, JSON.stringify(sub));
@@ -55,9 +44,6 @@ async function main() {
     return Promise.resolve(MEM_PUSH[username] || null);
   }
 
-  // البلاغات والحظر — حماية حقيقية ضد إساءة الاستخدام. البلاغات تُحفظ
-  // بقائمة يشوفها بس المطوّر (بمفتاح سري)، والحظر يوصل لكل الأجهزة عبر
-  // موضوع محفوظ يشترك فيه الجميع تلقائياً.
   var MEM_REPORTS = [];
   var MEM_BANNED = [];
   function addReport(r) {
@@ -91,9 +77,6 @@ async function main() {
     });
   }
 
-  // إشعارات الدفع (Push) — توصل حتى لو التطبيق مقفول تماماً، مو بس
-  // بالخلفية. تحتاج مفتاحين (VAPID) يميّزون سيرفرنا؛ لو ما وصّلناهم،
-  // الميزة تسكت بهدوء بدل ما تكسر شي.
   var PUSH_READY = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
   if (PUSH_READY) {
     webpush.setVapidDetails('mailto:admin@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
@@ -102,7 +85,6 @@ async function main() {
   const aedes = await Aedes.createBroker(persistence ? { persistence: persistence } : {});
   const PORT = process.env.PORT || 4001;
 
-  // نرفض أي رسالة أكبر من الحد المسموح قبل ما توصل لباقي المتصلين
   aedes.authorizePublish = (client, packet, callback) => {
     if (packet.payload && packet.payload.length > MAX_PAYLOAD) {
       return callback(new Error('الرسالة أكبر من الحد المسموح'));
@@ -110,33 +92,22 @@ async function main() {
     callback(null);
   };
 
-  // فحص صحة بسيط — Render (وأي مراقب خارجي) يستخدمه يتأكد إن السيرفر حي
-  // ونقطة نهاية "أكوا" — وسيط بيننا وبين خدمة الذكاء الاصطناعي (Gemini من
-  // جوجل، باقتها المجانية). المفتاح السري يبقى هنا بالسيرفر بس، أبداً ما
-  // يوصل لمتصفح المستخدم — لو حطيناه بكود التطبيق مباشرة، أي حد يقدر
-  // يفتحه من "عرض المصدر" ويسرقه ويستهلك حصتنا المجانية كاملة.
-  var AQUA_LIMIT = {};   // clientId -> [timestamps] آخر دقيقة — يمنع إساءة استخدام تفرّغ الحصة اليومية
+  var AQUA_LIMIT = {};
   var AQUA_SYSTEM = 'اسمك أكوا، مساعد ذكي داخل تطبيق "هلا شات". ' +
     'رد بالعربي دايماً (لهجة خليجية بسيطة ومفهومة)، بإيجاز واضح مناسب لمحادثة، ' +
     'بدون مقدمات طويلة. كن ودود ومباشر ومفيد. مهم: خلّ ردك دايماً جملة أو جملتين ' +
     'قصار ومكتملة — لا تبدأ فكرة وما تكملها، ولا تطوّل بدون داعي.';
 
-  // بوتات المجموعات — شخصية كل نوع محددة مسبقاً من طرفنا (مو نص حر
-  // يكتبه أي أدمن)، عشان تبقى آمنة ومضبوطة على موضوعها دايماً مهما
-  // كانت المحادثة حواليها. كل بوت يشارك بالمجموعة كعضو له شخصية، بس
-  // يركّز على تخصصه ويرجّع أي سؤال بره مجاله بأدب.
   var BOT_BASE_SYSTEM = 'أنت عضو داخل مجموعة دردشة بتطبيق "هلا شات"، ' +
     'وأعضاء المجموعة غالباً طلاب صغار. رد بالعربي (لهجة خليجية بسيطة)، بإيجاز شديد ' +
     '(سطر أو سطرين بس)، وابق دايماً بحدود تخصصك المذكور تحت — لو أحد سألك شي بره ' +
     'تخصصك، اعتذر بلطف وقول له تخصصك وش هو، بدون ما تحاول تجاوب على كل شي.';
-  // المساعد الدراسي — كل مادة عندها مجموعة "مقاطع" نصية مخزّنة (من
-  // كتب/مذكرات)، وبحث بسيط بالكلمات المفتاحية (بدون قاعدة بيانات متجهية
-  // معقدة) يلقط أقرب ٣ مقاطع للسؤال ويرفقهم مع السؤال لجيميناي.
   var STUDY_SUBJECTS = { science: 'العلوم', social: 'الاجتماعيات', islamic: 'التربية الإسلامية' };
-  var STUDY_BASE_SYSTEM = 'أنت مساعد دراسي كويتي. لو فيه مقاطع مرفقة مرتبطة بالسؤال: ' +
+  var STUDY_BASE_SYSTEM = 'أنت مساعد دراسي كويتي. لو فيه مقاطع مرتبطة بالسؤال: ' +
     'الوضع الافتراضي نقل حرفي — انقل نص الكتاب كما هو بدون تغيير أو إضافة. ' +
-    'الاستثناء: لو السؤال فيه (اشرح/وضح/فهمني/ليش)، اشرح بأسلوبك مع إبقاء المعلومة مطابقة للكتاب ۱۰۰٪. ' +
-    'لو ما فيه مقاطع مرتبطة، قول صراحة إنه مو من الكتاب وجاوب من معرفتك العامة.';
+    'الاستثناء: لو السؤال فيه (اشرح/وضح/فهمني/ليش)، اشرح بأسلوبك مع إبقاء المعلومة مطابقة للكتاب 100%. ' +
+    'لو ما فيه مقاطع مرتبطة، قول صراحة إنه مو من الكتاب وجاوب من معرفتك العامة. ' +
+    'مهم جداً: لا تتجاوز إجابتك 600 كلمة إطلاقاً.';
   var MEM_STUDY = {};
   function addStudyChunk(subject, text) {
     if (redisClient) return redisClient.rpush('study:' + subject, text);
@@ -172,13 +143,10 @@ async function main() {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-    // نقطة نهاية سيرفر الترحيل (TURN) — يساعد المكالمات تتصل بسرعة حتى
-    // على شبكات صعبة (بيانات جوال، شبكات مقيّدة). المفتاح يبقى هنا بس،
-    // ما يوصل للمتصفح أبداً — العميل يطلب منا الإعدادات الجاهزة فقط.
     if (req.method === 'GET' && req.url === '/ice') {
       if (!process.env.METERED_API_KEY || !process.env.METERED_APP_NAME) {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ iceServers: [] }));   // بدون إعداد، العميل يرجع للـ STUN الافتراضي بنفسه
+        res.end(JSON.stringify({ iceServers: [] }));
         return;
       }
       var turnUrl = 'https://' + process.env.METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(process.env.METERED_API_KEY);
@@ -195,10 +163,6 @@ async function main() {
       return;
     }
 
-  // نستدعي Gemini أول (المصدر الأساسي)، ولو فشل لأي سبب (تجاوزت الحصة
-  // المجانية، أو أي خطأ ثاني) ولدينا مفتاح Groq، نجرّب فيه تلقائياً بصمت
-  // — هذا يرفع الحصة اليومية الفعلية بشكل كبير بدون أي تكلفة، ولو الاثنين
-  // فشلوا نرجع خطأ واضح للمستخدم.
   var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
   var GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 
@@ -262,9 +226,6 @@ async function main() {
       if (ok1) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: reply1 })); return; }
       tryGroq(systemPrompt, userText, function (ok2, reply2, reason2) {
         if (ok2) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: reply2 })); return; }
-        // لو الاثنين فشلوا بالتحديد بسبب تجاوز الحصة اليومية (مو خطأ عادي)،
-        // نوضح هذا للمستخدم صراحة بدل رسالة عامة — الفرق مهم: خطأ عادي
-        // ممكن ينحل خلال ثواني، بس نفاذ الحصة يحتاج ننتظر لليوم الجاي.
         var bothQuota = reason1 === 'quota' && (reason2 === 'quota' || !process.env.GROQ_API_KEY);
         var msg = bothQuota
           ? logTag + ' وصل الحد اليومي المجاني اليوم — جرّب بكرة، أو استخدم المحادثة العادية بالتطبيق بدالها'
@@ -288,8 +249,6 @@ async function main() {
         if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) {
           res.writeHead(503, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'أكوا مو مفعّل بعد على السيرفر' })); return;
         }
-        // حد أقصى ٦ رسائل بالدقيقة لكل شخص — يحمي حصتنا اليومية المجانية
-        // من الانتهاء بسبب شخص وحد يسبّم أو يجرّب بسرعة
         var now = Date.now();
         var list = (AQUA_LIMIT[who] = (AQUA_LIMIT[who] || []).filter(function (t) { return now - t < 60000; }));
         if (list.length >= 6) {
@@ -319,8 +278,6 @@ async function main() {
         var history = Array.isArray(body.history) ? body.history.slice(-10) : [];
         var who = 'bot:' + (body.botId || '؟');
         var now = Date.now();
-        // حد أعلى من أكوا (١٢ بدل ٦) — لأن هذا حد يتشاركه كل أعضاء
-        // المجموعة مع بعض على نفس البوت، مو شخص وحد
         var list = (AQUA_LIMIT[who] = (AQUA_LIMIT[who] || []).filter(function (t) { return now - t < 60000; }));
         if (list.length >= 12) {
           res.writeHead(429, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'المجموعة سألت البوت كثير بوقت قصير، انتظروا شوي' })); return;
@@ -333,58 +290,6 @@ async function main() {
       });
       return;
   }
-
-    if (req.method === 'POST' && req.url === '/study/add') {
-      var chunksSA = [];
-      req.on('data', function (c) { chunksSA.push(c); if (Buffer.concat(chunksSA).length > 60000) req.destroy(); });
-      req.on('end', function () {
-        var body;
-        try { body = JSON.parse(Buffer.concat(chunksSA).toString('utf8') || '{}'); } catch (e) {
-          res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'صيغة غير صحيحة' })); return;
-        }
-        if (!process.env.ADMIN_KEY || body.key !== process.env.ADMIN_KEY) {
-          res.writeHead(403, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ممنوع' })); return;
-        }
-        var subject = String(body.subject || '').trim();
-        var text = String(body.text || '').trim().slice(0, 4000);
-        if (!STUDY_SUBJECTS[subject] || !text) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'بيانات ناقصة' })); return; }
-        addStudyChunk(subject, text).then(function () {
-          res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
-        }).catch(function () {
-          res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما قدرنا نحفظ' }));
-        });
-      });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/study/ask') {
-      var chunksSQ = [];
-      req.on('data', function (c) { chunksSQ.push(c); if (Buffer.concat(chunksSQ).length > 4000) req.destroy(); });
-      req.on('end', function () {
-        var body;
-        try { body = JSON.parse(Buffer.concat(chunksSQ).toString('utf8') || '{}'); } catch (e) {
-          res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'صيغة غير صحيحة' })); return;
-        }
-        var subject = String(body.subject || '').trim();
-        var question = String(body.question || '').trim().slice(0, 1200);
-        if (!STUDY_SUBJECTS[subject]) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'مادة غير معروفة' })); return; }
-        if (!question) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما فيه سؤال' })); return; }
-        var who = 'study:' + subject;
-        var now = Date.now();
-        var list = (AQUA_LIMIT[who] = (AQUA_LIMIT[who] || []).filter(function (t) { return now - t < 60000; }));
-        if (list.length >= 12) {
-          res.writeHead(429, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'أسئلة كثيرة بوقت قصير، انتظر شوي' })); return;
-        }
-        list.push(now);
-        loadStudyChunks(subject).then(function (chunks) {
-          var picked = pickRelevantChunks(chunks, question, 3);
-          var context = picked.length ? ('مقاطع من مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
-          var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما فيه مقاطع مخزّنة مرتبطة بهالسؤال بعد، جاوب بمعرفتك العامة عن المادة ونبّه الطالب إن هذا مو من الملفات المرفوعة.');
-          callGemini(sys, context + 'سؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject]);
-        });
-      });
-      return;
-    }
 
     if (req.method === 'POST' && req.url === '/study/add') {
       var chunksSA = [];
@@ -464,9 +369,6 @@ async function main() {
       return;
     }
 
-    // لوحة إدارة بسيطة — بس اللي يعرف المفتاح السري (بمتغيرات البيئة
-    // ADMIN_KEY) يقدر يشوفها أو يستخدمها. صفحة HTML عادية تفتح بأي متصفح،
-    // بدون ما نحتاج نبني تطبيق إدارة منفصل.
     if (req.url && req.url.indexOf('/admin') === 0) {
       var u = new URL(req.url, 'http://x');
       var key = u.searchParams.get('key');
@@ -559,8 +461,6 @@ async function main() {
           webpush.sendNotification(sub, JSON.stringify({ title: title, body: text, tag: tag }))
             .then(function () { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true })); })
             .catch(function (e) {
-              // الاشتراك ممكن يصير قديم/منتهي (المستخدم مسح بيانات المتصفح
-              // مثلاً) — نتجاهل الخطأ بهدوء، ما يستاهل نوقف السيرفر عشانه
               console.error('[push] فشل الإرسال:', e && e.message);
               res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, reason: 'فشل الإرسال' }));
             });
@@ -576,7 +476,6 @@ async function main() {
   const wss = new WebSocketServer({ server: httpServer });
   wss.on('connection', (websocket, req) => {
     const stream = createWebSocketStream(websocket);
-    // اتصال واحد يفشل ما لازم يأثر على البرنامج كامل ولا على باقي المتصلين
     websocket.on('error', () => {});
     stream.on('error', () => {});
     aedes.handle(stream, req);
@@ -586,7 +485,6 @@ async function main() {
     console.log('🫖 بروكر هلا شات شغّال على المنفذ', PORT);
   });
 
-  // سجل مختصر بالتيرمنال — يفيدك تتأكد إن الرسائل توصل فعلاً وأنت تراقب
   aedes.on('client', (c) => console.log('دخل:', c.id));
   aedes.on('clientDisconnect', (c) => console.log('طلع:', c.id));
   aedes.on('publish', (packet, c) => {
