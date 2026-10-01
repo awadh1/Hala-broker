@@ -171,7 +171,7 @@ async function main() {
     var payload = JSON.stringify({
       contents: [{ parts: [{ text: userText }] }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: { maxOutputTokens: 800 }
+      generationConfig: { maxOutputTokens: 2000 }
     });
     function tryModel(idx) {
       if (idx >= GEMINI_MODELS.length) { done(false); return; }
@@ -204,7 +204,7 @@ async function main() {
       fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-        body: JSON.stringify({ model: GROQ_MODELS[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 800 }),
+        body: JSON.stringify({ model: GROQ_MODELS[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 2000 }),
         signal: ctrl.signal
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
