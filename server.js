@@ -109,6 +109,10 @@ async function main() {
     'لو ما فيه مقاطع مرتبطة، قول صراحة إنه مو من الكتاب وجاوب من معرفتك العامة. ' +
     'مهم جداً: لا تتجاوز إجابتك 600 كلمة إطلاقاً.';
   var MEM_STUDY = {};
+  function clearStudy(subject) {
+    if (redisClient) return redisClient.del('study:' + subject);
+    MEM_STUDY[subject] = []; return Promise.resolve();
+  }
   function addStudyChunk(subject, text) {
     if (redisClient) return redisClient.rpush('study:' + subject, text);
     MEM_STUDY[subject] = MEM_STUDY[subject] || []; MEM_STUDY[subject].push(text); return Promise.resolve();
@@ -305,7 +309,7 @@ async function main() {
         var subject = String(body.subject || '').trim();
         var text = String(body.text || '').trim().slice(0, 4000);
         if (!STUDY_SUBJECTS[subject] || !text) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'بيانات ناقصة' })); return; }
-        addStudyChunk(subject, text).then(function () {
+        (body.reset ? clearStudy(subject) : Promise.resolve()).then(function () { return addStudyChunk(subject, text); }).then(function () {
           res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
         }).catch(function () {
           res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما قدرنا نحفظ' }));
