@@ -132,6 +132,7 @@ async function main() {
     return { reply: t.slice(0, m.index).trim(), suggestions: rest };
   }
   var MEM_STUDY = {};
+  var MEM_QUIZ = {};
   function clearStudy(subject) {
     if (redisClient) return redisClient.del('study:' + subject);
     MEM_STUDY[subject] = []; return Promise.resolve();
@@ -423,6 +424,37 @@ async function main() {
           res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'ما قدرنا نحفظ' }));
         });
       });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/quiz/add') {
+      var chunksQA = [];
+      req.on('data', function (c) { chunksQA.push(c); if (Buffer.concat(chunksQA).length > 600000) req.destroy(); });
+      req.on('end', function () {
+        var qb;
+        try { qb = JSON.parse(Buffer.concat(chunksQA).toString('utf8') || '{}'); } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'bad json' })); return;
+        }
+        if (!process.env.ADMIN_KEY || qb.key !== process.env.ADMIN_KEY) {
+          res.writeHead(403, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'forbidden' })); return;
+        }
+        var qs = String(qb.subject || '').trim();
+        if (!STUDY_SUBJECTS[qs] || !Array.isArray(qb.items)) { res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'bad data' })); return; }
+        var qjson = JSON.stringify(qb.items);
+        MEM_QUIZ[qs] = qjson;
+        (redisClient ? redisClient.set('quiz:' + qs, qjson) : Promise.resolve()).then(function () {
+          res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, n: qb.items.length }));
+        }).catch(function () { res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'save failed' })); });
+      });
+      return;
+    }
+    if (req.method === 'GET' && req.url.split('?')[0] === '/quiz') {
+      var qsub = (req.url.split('subject=')[1] || '').split('&')[0];
+      if (!STUDY_SUBJECTS[qsub]) { res.writeHead(400, { 'content-type': 'application/json' }); res.end('[]'); return; }
+      var sendQ = function (v) { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' }); res.end(v || '[]'); };
+      if (MEM_QUIZ[qsub]) { sendQ(MEM_QUIZ[qsub]); return; }
+      if (!redisClient) { sendQ('[]'); return; }
+      redisClient.get('quiz:' + qsub).then(function (v) { if (v) MEM_QUIZ[qsub] = v; sendQ(v); }).catch(function () { sendQ('[]'); });
       return;
     }
 
