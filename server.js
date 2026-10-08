@@ -122,9 +122,46 @@ async function main() {
     return Promise.resolve((MEM_STUDY[subject] || []).slice());
   }
   function pickRelevantChunks(chunks, question, topN) {
-    var words = question.replace(/[^\u0600-\u06FF\w\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; });
-    var scored = chunks.map(function (c) {
-      var score = 0; words.forEach(function (w) { if (c.indexOf(w) >= 0) score++; }); return { c: c, score: score };
+    function nrm(s) {
+      var o = '';
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charCodeAt(i);
+        if (ch >= 1611 && ch <= 1618) continue;
+        if (ch === 1571 || ch === 1573 || ch === 1570) ch = 1575;
+        else if (ch === 1609) ch = 1610;
+        else if (ch === 1577) ch = 1607;
+        o += String.fromCharCode(ch);
+      }
+      return o;
+    }
+    function toks(s) {
+      var out = [], cur = '';
+      s = nrm(s);
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charCodeAt(i);
+        var isL = (ch >= 1569 && ch <= 1610) || (ch >= 48 && ch <= 57) || (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90);
+        if (isL) cur += s.charAt(i);
+        else { if (cur) out.push(cur); cur = ''; }
+      }
+      if (cur) out.push(cur);
+      return out;
+    }
+    function stem(w) { return (w.length > 4 && w.indexOf('ال') === 0) ? w.slice(2) : w; }
+    var STOP = ' ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل ';
+    var qs = [];
+    toks(question).forEach(function (w) { var st = stem(w); if (st.length >= 2 && STOP.indexOf(' ' + w + ' ') < 0) qs.push(st); });
+    var docs = chunks.map(function (c) { return ' ' + toks(c).map(stem).join(' ') + ' '; });
+    var N = chunks.length;
+    var weights = qs.map(function (q) {
+      var df = 0;
+      docs.forEach(function (d) { if (d.indexOf(' ' + q) >= 0) df++; });
+      return df > 0 ? Math.log(1 + N / df) : 0;
+    });
+    var scored = chunks.map(function (c, idx) {
+      var d = docs[idx], score = 0;
+      qs.forEach(function (q, i) { if (weights[i] > 0 && d.indexOf(' ' + q) >= 0) score += weights[i]; });
+      for (var i = 0; i + 1 < qs.length; i++) { if (d.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 2; }
+      return { c: c, score: score };
     });
     scored.sort(function (a, b) { return b.score - a.score; });
     return scored.filter(function (s) { return s.score > 0; }).slice(0, topN).map(function (s) { return s.c; });
