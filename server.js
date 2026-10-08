@@ -147,20 +147,26 @@ async function main() {
       return out;
     }
     function stem(w) { return (w.length > 4 && w.indexOf('ال') === 0) ? w.slice(2) : w; }
-    var STOP = ' ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل ';
+    var STOP = nrm(' ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل تعريف عرف مفهوم معنى المقصود المراد اعط اعطني قل لي ');
     var qs = [];
     toks(question).forEach(function (w) { var st = stem(w); if (st.length >= 2 && STOP.indexOf(' ' + w + ' ') < 0) qs.push(st); });
     var docs = chunks.map(function (c) { return ' ' + toks(c).map(stem).join(' ') + ' '; });
     var N = chunks.length;
+    function pat(q) { return q.length >= 5 ? ' ' + q : ' ' + q + ' '; }
+    function cnt(dd, q) {
+      var p = pat(q), n = 0, i = dd.indexOf(p);
+      while (i >= 0) { n++; i = dd.indexOf(p, i + p.length - 1); }
+      return n;
+    }
     var weights = qs.map(function (q) {
       var df = 0;
-      docs.forEach(function (d) { if (d.indexOf(' ' + q) >= 0) df++; });
+      docs.forEach(function (dd) { if (cnt(dd, q) > 0) df++; });
       return df > 0 ? Math.log(1 + N / df) : 0;
     });
     var scored = chunks.map(function (c, idx) {
-      var d = docs[idx], score = 0;
-      qs.forEach(function (q, i) { if (weights[i] > 0 && d.indexOf(' ' + q) >= 0) score += weights[i]; });
-      for (var i = 0; i + 1 < qs.length; i++) { if (d.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 2; }
+      var dd = docs[idx], score = 0;
+      qs.forEach(function (q, i) { var t = cnt(dd, q); if (weights[i] > 0 && t > 0) score += weights[i] * (1 + Math.log(t)); });
+      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 2; }
       return { c: c, score: score };
     });
     scored.sort(function (a, b) { return b.score - a.score; });
