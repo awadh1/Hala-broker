@@ -455,10 +455,10 @@ async function main() {
           var context = picked.length ? ('مقاطع من كتاب مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
           var histTxt = hist.length ? ('المحادثة السابقة:\n' + hist.map(function (h) { return (h && h.r === 'u' ? 'الطالب: ' : 'المساعد: ') + String((h && h.t) || '').slice(0, 700); }).join('\n') + '\n\n') : '';
           var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
-          var ckey = (redisClient && !hist.length && picked.length) ? ('sc:' + subject + ':' + chunks.length + ':' + question.replace(/\s+/g, ' ').trim()) : null;
+          var ckey = (redisClient && !hist.length && picked.length) ? ('sc2:' + subject + ':' + chunks.length + ':' + question.replace(/\s+/g, ' ').trim()) : null;
           var go = function () {
             callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject], function (sh) {
-              if (ckey && sh && sh.reply) { redisClient.set(ckey, JSON.stringify(sh), 'EX', 604800).catch(function () {}); }
+              if (ckey && sh && sh.reply && sh.reply.length > 80 && sh.reply.indexOf('ما لقيت') !== 0 && !/[«“(:]$/.test(sh.reply.trim())) { redisClient.set(ckey, JSON.stringify(sh), 'EX', 604800).catch(function () {}); }
             });
           };
           if (!ckey) { go(); return; }
