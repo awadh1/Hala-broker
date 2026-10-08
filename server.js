@@ -234,18 +234,19 @@ async function main() {
       return;
     }
 
-  var GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+  var GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
   var GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
 
   function tryGemini(systemPrompt, userText, done) {
     if (!process.env.GEMINI_API_KEY) { done(false); return; }
+    var qHitG = false;
     var payload = JSON.stringify({
       contents: [{ parts: [{ text: userText }] }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: { maxOutputTokens: 2000 }
     });
     function tryModel(idx) {
-      if (idx >= GEMINI_MODELS.length) { done(false); return; }
+      if (idx >= GEMINI_MODELS.length) { done(false, null, qHitG ? 'quota' : 'error'); return; }
       var ctrl = new AbortController();
       var killer = setTimeout(function () { ctrl.abort(); }, 28000);
       fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[idx] + ':generateContent', {
@@ -256,7 +257,7 @@ async function main() {
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
           if (res2.status === 404) { tryModel(idx + 1); return; }
-          if (res2.status === 429) { console.error('[Gemini] تجاوزت الحصة، ننتقل لـ Groq لو متوفر'); done(false, null, 'quota'); return; }
+          if (res2.status === 429) { console.error('[Gemini] تجاوزت حصة ' + GEMINI_MODELS[idx]); qHitG = true; tryModel(idx + 1); return; }
           var reply = res2.data && res2.data.candidates && res2.data.candidates[0] && res2.data.candidates[0].content &&
             res2.data.candidates[0].content.parts && res2.data.candidates[0].content.parts[0] && res2.data.candidates[0].content.parts[0].text;
           if (!reply) { console.error('[Gemini] رد غير متوقع:', JSON.stringify(res2.data).slice(0, 300)); done(false, null, 'error'); return; }
@@ -268,8 +269,9 @@ async function main() {
 
   function tryGroq(systemPrompt, userText, done) {
     if (!process.env.GROQ_API_KEY) { done(false); return; }
+    var qHitQ = false;
     function tryModel(idx) {
-      if (idx >= GROQ_MODELS.length) { done(false); return; }
+      if (idx >= GROQ_MODELS.length) { done(false, null, qHitQ ? 'quota' : 'error'); return; }
       var ctrl = new AbortController();
       var killer = setTimeout(function () { ctrl.abort(); }, 28000);
       fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -280,7 +282,7 @@ async function main() {
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
           if (res2.status === 404) { tryModel(idx + 1); return; }
-          if (res2.status === 429) { console.error('[Groq] تجاوزت الحصة'); done(false, null, 'quota'); return; }
+          if (res2.status === 429) { console.error('[Groq] تجاوزت حصة ' + GROQ_MODELS[idx]); qHitQ = true; tryModel(idx + 1); return; }
           var reply = res2.data && res2.data.choices && res2.data.choices[0] && res2.data.choices[0].message && res2.data.choices[0].message.content;
           if (!reply) { console.error('[Groq] رد غير متوقع:', JSON.stringify(res2.data).slice(0, 300)); done(false, null, 'error'); return; }
           done(true, reply);
