@@ -279,7 +279,7 @@ async function main() {
       fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-        body: JSON.stringify({ model: GROQ_MODELS[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 2000 }),
+        body: JSON.stringify({ model: GROQ_MODELS[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], reasoning_effort: 'low', max_tokens: 4000 }),
         signal: ctrl.signal
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
@@ -302,7 +302,7 @@ async function main() {
       fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
-        body: JSON.stringify({ model: models[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 2000 }),
+        body: JSON.stringify({ model: models[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 4000 }),
         signal: ctrl.signal
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
