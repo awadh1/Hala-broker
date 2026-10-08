@@ -103,11 +103,34 @@ async function main() {
     '(سطر أو سطرين بس)، وابق دايماً بحدود تخصصك المذكور تحت — لو أحد سألك شي بره ' +
     'تخصصك، اعتذر بلطف وقول له تخصصك وش هو، بدون ما تحاول تجاوب على كل شي.';
   var STUDY_SUBJECTS = { science: 'العلوم', social: 'الاجتماعيات', islamic: 'التربية الإسلامية' };
-  var STUDY_BASE_SYSTEM = 'أنت مساعد دراسي كويتي. لو فيه مقاطع مرتبطة بالسؤال: ' +
-    'الوضع الافتراضي نقل حرفي — انقل نص الكتاب كما هو بدون تغيير أو إضافة. ' +
-    'الاستثناء: لو السؤال فيه (اشرح/وضح/فهمني/ليش)، اشرح بأسلوبك مع إبقاء المعلومة مطابقة للكتاب 100%. ' +
-    'لو ما فيه مقاطع مرتبطة، قول صراحة إنه مو من الكتاب وجاوب من معرفتك العامة. ' +
-    'مهم جداً: لا تتجاوز إجابتك 600 كلمة إطلاقاً.';
+  var STUDY_BASE_SYSTEM = 'أنت «المساعد الدراسي»، معلّم كويتي لطلاب الصف الثامن. مصدرك الوحيد هو المقاطع المرفقة من الكتاب (الرمز [ص ..] يدل على رقم الصفحة، اذكره بين قوسين مثل (ص 64) لما تحدد مكان المعلومة). ' +
+    'قواعد صارمة: ' +
+    '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب. ' +
+    '2) سؤال تعريف أو معلومة محددة: انقل نص الكتاب حرفياً بدون تغيير وبدون مقدمة. المقاطع مقروءة بالـOCR، فلو كلمة فيها خطأ قراءة واضح صححها إملائياً فقط. ' +
+    '3) اشرح/وضح/لخص/فهمني: اشرح الدرس خطوة خطوة بلغة سهلة لطالب الصف الثامن، في نقاط قصيرة مرقمة، مع الحفاظ على كل معلومة ورقم ومصطلح من الكتاب وإبراز المصطلحات بـ **، وبعده سطر «الخلاصة». ' +
+    '4) أسئلة التمارين (أكمل، علل، قارن، صح أو خطأ، اختر، فسّر، ما سبب...): حلّ السؤال اعتماداً على نص الكتاب فقط. اكتب الجواب النهائي أولاً ثم سطراً «من الكتاب:» بنص قصير يدعمه. لو السؤال حسابي طبّق قانون الكتاب وبيّن الخطوات. ' +
+    '5) طلب أسئلة/اختبرني/أسئلة متوقعة: اكتب 5 أسئلة متنوعة من نفس الدرس (تعريف، علل، صح أو خطأ، أكمل) مرقّمة بدون إجاباتها، واطلب من الطالب يكتب إجابته لتصحّحها. ' +
+    '6) لو الطالب أرسل إجابة لسؤال سابق: صحّحها من الكتاب، وقل صح أو خطأ ثم الجواب الصحيح. ' +
+    '7) الأسلوب: عربية مبسطة وودودة، ولا تتجاوز 600 كلمة. ' +
+    '8) في آخر كل رد اكتب سطراً منفصلاً فيه [[أسئلة]] ثم ثلاثة أسئلة قصيرة (كل سؤال في سطر) يمكن الإجابة عنها من الكتاب وقريبة من الموضوع. لا تكتب شيئاً بعدها.';
+  function studyIntent(q) {
+    var has = function (arr) { for (var i = 0; i < arr.length; i++) { if (q.indexOf(arr[i]) >= 0) return true; } return false; };
+    if (has(['اختبرني', 'أسئلة', 'اسئلة', 'متوقعة', 'متوقعه', 'اختبار'])) return { k: 'quiz', n: 5, label: 'طلب أسئلة تدريبية' };
+    if (has(['اشرح', 'شرح', 'وضح', 'فهمني', 'لخص', 'تلخيص', 'ابسط'])) return { k: 'explain', n: 5, label: 'طلب شرح' };
+    if (has(['أكمل', 'اكمل', 'علل', 'علّل', 'قارن', 'املأ', 'صح أو', 'صح او', 'اختر', 'فسر', 'فسّر', 'ما سبب', 'لماذا', 'ليش', 'احسب', 'حل '])) return { k: 'solve', n: 4, label: 'حل سؤال تمرين' };
+    return { k: 'fact', n: 3, label: 'سؤال معلومة أو تعريف' };
+  }
+  function studyClean(q) {
+    var w = ['أسئلة', 'اسئلة', 'اختبرني', 'متوقعة', 'متوقعه', 'اشرح', 'شرح', 'وضح', 'فهمني', 'لخص', 'درس', 'الدرس', 'أكمل', 'اكمل', 'علل', 'قارن'];
+    var parts = q.split(' ').filter(function (x) { return w.indexOf(x) < 0; });
+    return parts.join(' ');
+  }
+  function shapeReply(t) {
+    var m = t.match(/\[\[\s*أسئلة\s*\]\]/);
+    if (!m) return { reply: t.trim() };
+    var rest = t.slice(m.index + m[0].length).split('\n').map(function (x) { return x.replace(/^[\s\-*•\d.)]+/, '').replace(/[*]+/g, '').trim(); }).filter(function (x) { return x.length > 3 && x.length < 140; }).slice(0, 3);
+    return { reply: t.slice(0, m.index).trim(), suggestions: rest };
+  }
   var MEM_STUDY = {};
   function clearStudy(subject) {
     if (redisClient) return redisClient.del('study:' + subject);
@@ -224,7 +247,7 @@ async function main() {
     function tryModel(idx) {
       if (idx >= GEMINI_MODELS.length) { done(false); return; }
       var ctrl = new AbortController();
-      var killer = setTimeout(function () { ctrl.abort(); }, 12000);
+      var killer = setTimeout(function () { ctrl.abort(); }, 28000);
       fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[idx] + ':generateContent', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
@@ -248,7 +271,7 @@ async function main() {
     function tryModel(idx) {
       if (idx >= GROQ_MODELS.length) { done(false); return; }
       var ctrl = new AbortController();
-      var killer = setTimeout(function () { ctrl.abort(); }, 12000);
+      var killer = setTimeout(function () { ctrl.abort(); }, 28000);
       fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + process.env.GROQ_API_KEY },
@@ -271,9 +294,9 @@ async function main() {
       res.writeHead(503, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: logTag + ' مو مفعّل بعد على السيرفر' })); return;
     }
     tryGemini(systemPrompt, userText, function (ok1, reply1, reason1) {
-      if (ok1) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: reply1 })); return; }
+      if (ok1) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(shapeReply(reply1))); return; }
       tryGroq(systemPrompt, userText, function (ok2, reply2, reason2) {
-        if (ok2) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: reply2 })); return; }
+        if (ok2) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(shapeReply(reply2))); return; }
         var bothQuota = reason1 === 'quota' && (reason2 === 'quota' || !process.env.GROQ_API_KEY);
         var msg = bothQuota
           ? logTag + ' وصل الحد اليومي المجاني اليوم — جرّب بكرة، أو استخدم المحادثة العادية بالتطبيق بدالها'
@@ -364,7 +387,7 @@ async function main() {
 
     if (req.method === 'POST' && req.url === '/study/ask') {
       var chunksSQ = [];
-      req.on('data', function (c) { chunksSQ.push(c); if (Buffer.concat(chunksSQ).length > 4000) req.destroy(); });
+      req.on('data', function (c) { chunksSQ.push(c); if (Buffer.concat(chunksSQ).length > 12000) req.destroy(); });
       req.on('end', function () {
         var body;
         try { body = JSON.parse(Buffer.concat(chunksSQ).toString('utf8') || '{}'); } catch (e) {
@@ -382,10 +405,16 @@ async function main() {
         }
         list.push(now);
         loadStudyChunks(subject).then(function (chunks) {
-          var picked = pickRelevantChunks(chunks, question, 3);
-          var context = picked.length ? ('مقاطع من مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
-          var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما فيه مقاطع مخزّنة مرتبطة بهالسؤال بعد، جاوب بمعرفتك العامة عن المادة ونبّه الطالب إن هذا مو من الملفات المرفوعة.');
-          callGemini(sys, context + 'سؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject]);
+          var hist = Array.isArray(body.history) ? body.history.slice(-4) : [];
+          var prevUser = ''; for (var hi = hist.length - 1; hi >= 0; hi--) { if (hist[hi] && hist[hi].r === 'u') { prevUser = String(hist[hi].t || '').slice(0, 200); break; } }
+          var intent = studyIntent(question);
+          var qForSearch = studyClean(question);
+          if (qForSearch.length < 25 && prevUser) qForSearch = qForSearch + ' ' + studyClean(prevUser);
+          var picked = pickRelevantChunks(chunks, qForSearch, intent.n);
+          var context = picked.length ? ('مقاطع من كتاب مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
+          var histTxt = hist.length ? ('المحادثة السابقة:\n' + hist.map(function (h) { return (h && h.r === 'u' ? 'الطالب: ' : 'المساعد: ') + String((h && h.t) || '').slice(0, 700); }).join('\n') + '\n\n') : '';
+          var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
+          callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject]);
         });
       });
       return;
