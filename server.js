@@ -289,21 +289,58 @@ async function main() {
     tryModel(0);
   }
 
-  function callGemini(systemPrompt, userText, res, logTag) {
-    if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) {
+  function tryCompat(name, url, key, models, systemPrompt, userText, done) {
+    if (!key) { done(false); return; }
+    function tryModel(idx) {
+      if (idx >= models.length) { done(false); return; }
+      var ctrl = new AbortController();
+      var killer = setTimeout(function () { ctrl.abort(); }, 28000);
+      fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
+        body: JSON.stringify({ model: models[idx], messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userText }], max_tokens: 2000 }),
+        signal: ctrl.signal
+      }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
+        .then(function (res2) {
+          if (res2.status === 404) { tryModel(idx + 1); return; }
+          if (res2.status === 429) { console.error('[' + name + '] تجاوزت الحصة'); done(false, null, 'quota'); return; }
+          var reply = res2.data && res2.data.choices && res2.data.choices[0] && res2.data.choices[0].message && res2.data.choices[0].message.content;
+          if (!reply) { console.error('[' + name + '] رد غير متوقع:', JSON.stringify(res2.data).slice(0, 300)); tryModel(idx + 1); return; }
+          done(true, reply);
+        }).catch(function (e) { clearTimeout(killer); console.error('[' + name + '] خطأ اتصال:', e && e.message); done(false, null, 'error'); });
+    }
+    tryModel(0);
+  }
+
+  function callGemini(systemPrompt, userText, res, logTag, onOk) {
+    if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.CEREBRAS_API_KEY && !process.env.OPENROUTER_API_KEY) {
       res.writeHead(503, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: logTag + ' مو مفعّل بعد على السيرفر' })); return;
     }
-    tryGemini(systemPrompt, userText, function (ok1, reply1, reason1) {
-      if (ok1) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(shapeReply(reply1))); return; }
-      tryGroq(systemPrompt, userText, function (ok2, reply2, reason2) {
-        if (ok2) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(shapeReply(reply2))); return; }
-        var bothQuota = reason1 === 'quota' && (reason2 === 'quota' || !process.env.GROQ_API_KEY);
-        var msg = bothQuota
-          ? logTag + ' وصل الحد اليومي المجاني اليوم — جرّب بكرة، أو استخدم المحادثة العادية بالتطبيق بدالها'
-          : logTag + ' ما قدر يرد الحين، جرّب بعدين';
+    var reasons = [];
+    var chain = [
+      function (next) { tryGemini(systemPrompt, userText, next); },
+      function (next) { tryGroq(systemPrompt, userText, next); },
+      function (next) { tryCompat('Cerebras', 'https://api.cerebras.ai/v1/chat/completions', process.env.CEREBRAS_API_KEY, ['gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507'], systemPrompt, userText, next); },
+      function (next) { tryCompat('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', process.env.OPENROUTER_API_KEY, ['openai/gpt-oss-120b:free', 'meta-llama/llama-3.3-70b-instruct:free'], systemPrompt, userText, next); }
+    ];
+    (function step(i) {
+      if (i >= chain.length) {
+        var allQuota = reasons.length > 0 && reasons.every(function (r) { return r === 'quota'; });
+        var msg = allQuota ? logTag + ' مشغول الحين بسبب كثرة الطلبات — انتظر دقيقة وجرّب مرة ثانية' : logTag + ' ما قدر يرد الحين، جرّب بعد شوي';
         res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: msg }));
+        return;
+      }
+      chain[i](function (ok, reply, reason) {
+        if (ok) {
+          var sh = shapeReply(reply);
+          if (onOk) { try { onOk(sh); } catch (e) {} }
+          res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(sh));
+          return;
+        }
+        if (reason) reasons.push(reason);
+        step(i + 1);
       });
-    });
+    })(0);
   }
 
   if (req.method === 'POST' && req.url === '/aqua') {
@@ -414,7 +451,16 @@ async function main() {
           var context = picked.length ? ('مقاطع من كتاب مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
           var histTxt = hist.length ? ('المحادثة السابقة:\n' + hist.map(function (h) { return (h && h.r === 'u' ? 'الطالب: ' : 'المساعد: ') + String((h && h.t) || '').slice(0, 700); }).join('\n') + '\n\n') : '';
           var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
-          callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject]);
+          var ckey = (redisClient && !hist.length && picked.length) ? ('sc:' + subject + ':' + chunks.length + ':' + question.replace(/\s+/g, ' ').trim()) : null;
+          var go = function () {
+            callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject], function (sh) {
+              if (ckey && sh && sh.reply) { redisClient.set(ckey, JSON.stringify(sh), 'EX', 604800).catch(function () {}); }
+            });
+          };
+          if (!ckey) { go(); return; }
+          redisClient.get(ckey).then(function (v) {
+            if (v) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(v); } else { go(); }
+          }).catch(go);
         });
       });
       return;
