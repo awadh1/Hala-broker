@@ -108,7 +108,7 @@ async function main() {
     '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب. ' +
     '2) سؤال تعريف أو معلومة محددة: انقل نص الكتاب حرفياً بدون تغيير وبدون مقدمة. المقاطع مقروءة بالـOCR، فلو كلمة فيها خطأ قراءة واضح صححها إملائياً فقط. ' +
     '3) اشرح/وضح/لخص/فهمني: اشرح الدرس خطوة خطوة بلغة سهلة لطالب الصف الثامن، في نقاط قصيرة مرقمة، مع الحفاظ على كل معلومة ورقم ومصطلح من الكتاب وإبراز المصطلحات بـ **، وبعده سطر «الخلاصة». ' +
-    '4) أسئلة التمارين (أكمل، علل، قارن، صح أو خطأ، اختر، فسّر، ما سبب...): حلّ السؤال اعتماداً على نص الكتاب فقط. اكتب الجواب النهائي أولاً ثم سطراً «من الكتاب:» بنص قصير يدعمه. لو السؤال حسابي طبّق قانون الكتاب وبيّن الخطوات. ' +
+    '4) أسئلة التمارين (أكمل، علل، قارن، صح أو خطأ، اختر، فسّر، ما سبب...): حلّ السؤال اعتماداً على نص الكتاب فقط. اكتب الجواب النهائي في جملة أو جملتين فقط بدون أي إضافة من عندك، ثم سطراً جديداً يبدأ بـ «من الكتاب:» ونص الكتاب الداعم له حرفياً مع رقم الصفحة. ممنوع الشرح الزائد أو المعلومات من خارج المقاطع، ولو ما لقيت الإجابة في المقاطع لا تخمّن. لو السؤال حسابي طبّق قانون الكتاب وبيّن الخطوات. ' +
     '5) طلب أسئلة/اختبرني/أسئلة متوقعة: اكتب 5 أسئلة متنوعة من نفس الدرس (تعريف، علل، صح أو خطأ، أكمل) مرقّمة بدون إجاباتها، واطلب من الطالب يكتب إجابته لتصحّحها. ' +
     '6) لو الطالب أرسل إجابة لسؤال سابق: صحّحها من الكتاب، وقل صح أو خطأ ثم الجواب الصحيح. ' +
     '7) الأسلوب: عربية مبسطة وودودة، ولا تتجاوز 600 كلمة. ' +
@@ -243,26 +243,28 @@ async function main() {
     var payload = JSON.stringify({
       contents: [{ parts: [{ text: userText }] }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: { maxOutputTokens: 2000 }
+      generationConfig: { maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
     });
-    function tryModel(idx) {
+    var plainPayload = JSON.stringify({ contents: [{ parts: [{ text: userText }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { maxOutputTokens: 2000 } });
+    function tryModel(idx, usePlain) {
       if (idx >= GEMINI_MODELS.length) { done(false, null, qHitG ? 'quota' : 'error'); return; }
       var ctrl = new AbortController();
-      var killer = setTimeout(function () { ctrl.abort(); }, 28000);
+      var killer = setTimeout(function () { ctrl.abort(); }, 18000);
       fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODELS[idx] + ':generateContent', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-        body: payload,
+        body: usePlain ? plainPayload : payload,
         signal: ctrl.signal
       }).then(function (r) { clearTimeout(killer); return r.json().then(function (data) { return { status: r.status, data: data }; }); })
         .then(function (res2) {
+          if (res2.status === 400 && !usePlain) { tryModel(idx, true); return; }
           if (res2.status === 404) { tryModel(idx + 1); return; }
           if (res2.status === 429) { console.error('[Gemini] تجاوزت حصة ' + GEMINI_MODELS[idx]); qHitG = true; tryModel(idx + 1); return; }
           var reply = res2.data && res2.data.candidates && res2.data.candidates[0] && res2.data.candidates[0].content &&
             res2.data.candidates[0].content.parts && res2.data.candidates[0].content.parts[0] && res2.data.candidates[0].content.parts[0].text;
           if (!reply) { console.error('[Gemini] رد غير متوقع:', JSON.stringify(res2.data).slice(0, 300)); done(false, null, 'error'); return; }
           done(true, reply);
-        }).catch(function (e) { clearTimeout(killer); console.error('[Gemini] خطأ اتصال:', e && e.message); done(false, null, 'error'); });
+        }).catch(function (e) { clearTimeout(killer); console.error('[Gemini] خطأ اتصال ' + GEMINI_MODELS[idx] + ':', e && e.message); tryModel(idx + 1); });
     }
     tryModel(0);
   }
