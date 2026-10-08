@@ -165,8 +165,9 @@ async function main() {
     });
     var scored = chunks.map(function (c, idx) {
       var dd = docs[idx], score = 0;
-      qs.forEach(function (q, i) { var t = cnt(dd, q); if (weights[i] > 0 && t > 0) score += weights[i] * (1 + Math.log(t)); });
-      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 2; }
+      qs.forEach(function (q, i) { var t = cnt(dd, q); if (weights[i] > 0 && t > 0) score += weights[i] * (1 + 0.25 * Math.log(t)); });
+      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 3; }
+      if (c.indexOf('\u0627\u0644\u0633\u0624\u0627\u0644') >= 0 || c.indexOf('....') >= 0) score *= 0.6;
       return { c: c, score: score };
     });
     scored.sort(function (a, b) { return b.score - a.score; });
