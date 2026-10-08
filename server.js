@@ -112,7 +112,7 @@ async function main() {
     '5) طلب أسئلة/اختبرني/أسئلة متوقعة: اكتب 5 أسئلة متنوعة من نفس الدرس (تعريف، علل، صح أو خطأ، أكمل) مرقّمة بدون إجاباتها، واطلب من الطالب يكتب إجابته لتصحّحها. ' +
     '6) لو الطالب أرسل إجابة لسؤال سابق: صحّحها من الكتاب، وقل صح أو خطأ ثم الجواب الصحيح. ' +
     '7) الأسلوب: عربية مبسطة وودودة، ولا تتجاوز 600 كلمة. ' +
-    '8) في آخر كل رد اكتب سطراً منفصلاً فيه [[أسئلة]] ثم ثلاثة أسئلة قصيرة (كل سؤال في سطر) يمكن الإجابة عنها من الكتاب وقريبة من الموضوع. لا تكتب شيئاً بعدها.';
+    '8) في آخر كل رد اكتب سطراً منفصلاً فيه [[أسئلة]] ثم ثلاثة أسئلة قصيرة (كل سؤال في سطر) يمكن الإجابة عنها من المقاطع نفسها وتدور حول نفس موضوع سؤال الطالب بالضبط (لا تقترح أسئلة عن دروس أخرى). لا تكتب شيئاً بعدها.';
   function studyIntent(q) {
     var has = function (arr) { for (var i = 0; i < arr.length; i++) { if (q.indexOf(arr[i]) >= 0) return true; } return false; };
     if (has(['اختبرني', 'أسئلة', 'اسئلة', 'متوقعة', 'متوقعه', 'اختبار'])) return { k: 'quiz', n: 5, label: 'طلب أسئلة تدريبية' };
@@ -451,7 +451,11 @@ async function main() {
           var intent = studyIntent(question);
           var qForSearch = studyClean(question);
           if (qForSearch.length < 25 && prevUser) qForSearch = qForSearch + ' ' + studyClean(prevUser);
+          var SYN = { 'المقصود': 'مفهوم تعريف', 'معنى': 'مفهوم تعريف', 'عناصر': 'جوانب أسس', 'عناصرها': 'جوانب أسس', 'مقومات': 'أسس جوانب', 'مميزات': 'خصائص', 'فوائد': 'ثمرات أهمية' };
+          var qx = qForSearch.split(' ').map(function (w) { return SYN[w] || ''; }).join(' ').trim();
+          if (qx) qForSearch = qForSearch + ' ' + qx;
           var picked = pickRelevantChunks(chunks, qForSearch, intent.n);
+          if (!picked.length) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: 'ما لقيت هالمعلومة في الكتاب. جرّب تعيد صياغة السؤال أو اكتب اسم الدرس.', suggestions: [] })); return; }
           var context = picked.length ? ('مقاطع من كتاب مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
           var histTxt = hist.length ? ('المحادثة السابقة:\n' + hist.map(function (h) { return (h && h.r === 'u' ? 'الطالب: ' : 'المساعد: ') + String((h && h.t) || '').slice(0, 700); }).join('\n') + '\n\n') : '';
           var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
