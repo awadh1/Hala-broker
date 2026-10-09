@@ -105,13 +105,14 @@ async function main() {
   var STUDY_SUBJECTS = { science: 'العلوم', social: 'الاجتماعيات', islamic: 'التربية الإسلامية' };
   var STUDY_BASE_SYSTEM = 'أنت «المساعد الدراسي»، معلّم كويتي لطلاب الصف الثامن. مصدرك الوحيد هو المقاطع المرفقة من الكتاب (العلامة [ص N] داخل المقطع تعني أن كل ما بعدها حتى العلامة التالية هو من الصفحة N المطبوعة في الكتاب. لما تذكر رقم الصفحة خذه من أقرب علامة [ص N] تسبق المعلومة نفسها وبين قوسين مثل (ص 31)، ولا تخمّن رقماً أبداً، وإذا كانت العلامة [ص ؟] فلا تذكر رقم صفحة). ' +
     'قواعد صارمة: ' +
-    '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب. ' +
+    '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب باسمه فقط بدون رقم صفحة. ' +
     '2) سؤال تعريف أو معلومة محددة: انقل نص الكتاب حرفياً بدون تغيير وبدون مقدمة. المقاطع مقروءة بالـOCR، فلو كلمة فيها خطأ قراءة واضح صححها إملائياً فقط. الأرقام والسنوات والتواريخ والقياسات انقلها كما هي في المقاطع بدون أي تغيير، ولا تستبدلها برقم من معرفتك العامة. ' +
     '3) اشرح/وضح/لخص/فهمني: اشرح الدرس خطوة خطوة بلغة سهلة لطالب الصف الثامن، في نقاط قصيرة مرقمة، مع الحفاظ على كل معلومة ورقم ومصطلح من الكتاب وإبراز المصطلحات بـ **، وبعده سطر «الخلاصة». ' +
     '4) أسئلة التمارين (أكمل، علل، قارن، صح أو خطأ، اختر، فسّر، ما سبب...): حلّ السؤال اعتماداً على نص الكتاب فقط. اكتب الجواب النهائي في جملة أو جملتين فقط بدون أي إضافة من عندك، ثم سطراً جديداً يبدأ بـ «من الكتاب:» ونص الكتاب الداعم له حرفياً مع رقم الصفحة. ممنوع الشرح الزائد أو المعلومات من خارج المقاطع، ولو ما لقيت الإجابة في المقاطع لا تخمّن. لو السؤال حسابي طبّق قانون الكتاب وبيّن الخطوات. ' +
     '5) طلب أسئلة/اختبرني/أسئلة متوقعة: اكتب 5 أسئلة متنوعة من نفس الدرس (تعريف، علل، صح أو خطأ، أكمل) مرقّمة بدون إجاباتها، واطلب من الطالب يكتب إجابته لتصحّحها. ' +
     '6) لو الطالب أرسل إجابة لسؤال سابق: صحّحها من الكتاب، وقل صح أو خطأ ثم الجواب الصحيح. ' +
     '7) الأسلوب: عربية مبسطة وودودة، ولا تتجاوز 600 كلمة. ' +
+    '9) ابدأ بالجواب مباشرة بدون ترحيب أو عبارات مثل «يا بطل». لا تضف أي مثال أو تفصيل أو سبب غير مكتوب في المقاطع، حتى لو كان صحيحاً في معرفتك العامة؛ الشرح يكون بإعادة صياغة ما في المقاطع فقط. ' +
     '8) في آخر كل رد اكتب سطراً منفصلاً فيه [[أسئلة]] ثم ثلاثة أسئلة قصيرة (كل سؤال في سطر) يمكن الإجابة عنها من المقاطع نفسها وتدور حول نفس موضوع سؤال الطالب بالضبط (لا تقترح أسئلة عن دروس أخرى). لا تكتب شيئاً بعدها.';
   function studyIntent(q) {
     var has = function (arr) { for (var i = 0; i < arr.length; i++) { if (q.indexOf(arr[i]) >= 0) return true; } return false; };
@@ -197,6 +198,90 @@ async function main() {
     scored.sort(function (a, b) { return b.score - a.score; });
     return scored.filter(function (s) { return s.score > 0; }).slice(0, topN).map(function (s) { return s.c; });
   }
+
+  function pickRelevantChunks2(chunks, question, topN, opts) {
+    opts = opts || {};
+    function nrm(s) {
+      var o = '';
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charCodeAt(i);
+        if (ch >= 1611 && ch <= 1618) continue;
+        if (ch === 1600) continue;
+        if (ch === 1571 || ch === 1573 || ch === 1570) ch = 1575;
+        else if (ch === 1609) ch = 1610;
+        else if (ch === 1577) ch = 1607;
+        else if (ch >= 1632 && ch <= 1641) ch = ch - 1632 + 48;
+        else if (ch >= 1776 && ch <= 1785) ch = ch - 1776 + 48;
+        o += String.fromCharCode(ch);
+      }
+      return o;
+    }
+    function toks(s) {
+      var out = [], cur = '';
+      s = nrm(s);
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charCodeAt(i);
+        var isL = (ch >= 1569 && ch <= 1610) || (ch >= 48 && ch <= 57) || (ch >= 97 && ch <= 122) || (ch >= 65 && ch <= 90);
+        if (isL) cur += s.charAt(i);
+        else { if (cur) out.push(cur); cur = ''; }
+      }
+      if (cur) out.push(cur);
+      return out;
+    }
+    function stem(w) {
+      if (w.length <= 3) return w;
+      if (w.indexOf('وال') === 0 || w.indexOf('بال') === 0 || w.indexOf('كال') === 0 || w.indexOf('فال') === 0) w = w.slice(3);
+      else if (w.indexOf('لل') === 0 && w.length > 4) w = w.slice(2);
+      else if (w.indexOf('ال') === 0) w = w.slice(2);
+      if (w.length > 4) {
+        var sf = ['ات', 'ون', 'ين', 'ان', 'ها', 'هم', 'ية', 'يه', 'ة', 'ه', 'ي'];
+        for (var k = 0; k < sf.length; k++) { var s2 = sf[k]; if (w.length - s2.length >= 3 && w.slice(-s2.length) === s2) { w = w.slice(0, -s2.length); break; } }
+      }
+      return w;
+    }
+    var STOP = ' ' + nrm('ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل تعريف عرف مفهوم معنى المقصود المراد اعط اعطني قل لي شنو شو ايش وش ويش شلون وين اللي اللى تبي ابي ابغى بغيت نسمي نسميه يسمى تسمى تصير يصير صار كم مره مرة جدا اي اىي ايه هاي هذي ذي ذا هذاك هناك عند بين بس لو اذا إذا ثم او أو مع هم هن نحن انا انت كان كانت يكون تكون يكن لا لم لن قد ثاني ناحيه ناحية جهة طريقة نوع حق مال تاخذ ياخذ يسوي تسوي كامل كاملا كامله كامل تفصيل بالتفصيل تفصيلا ببساطه بسيط مختصر باختصار اختصار شرح اشرحه اشرحها وضحه وضحها لخصه لخصها فهمني ممكن لو سمحت مجال مجالات موضوع نقطه معلومات معلومه شي شيء اشياء') + ' ';
+    var STOPS = {}; STOP.split(' ').forEach(function (w) { if (w) { STOPS[w] = 1; STOPS[stem(w)] = 1; } });
+    var qs = [];
+    toks(question).forEach(function (w) { if (STOPS[w]) return; if (w.length > 4 && (STOPS[w.slice(0, -1)] || STOPS[w.slice(0, -2)])) return; var st = stem(w); if (st.length >= 2 && !STOPS[st]) qs.push(st); });
+    var heads = [], docs = chunks.map(function (c) {
+      var hm = c.match(/^\[([^\]\n]*[^\]\n]*)\]/); var head = '';
+      var firstLine = c.split('\n')[0];
+      if (firstLine.indexOf('[الوحدة') === 0 || firstLine.indexOf('[مقدمة') === 0) head = firstLine;
+      heads.push(' ' + toks(head).map(stem).join(' ') + ' ');
+      return ' ' + toks(c).map(stem).join(' ') + ' ';
+    });
+    var meta = /مقدمه|مقدمة|تاليف|فهرس|المحتويات|الكتاب/.test(nrm(question));
+    var N = chunks.length;
+    function cnt(dd, q) {
+      var p = ' ' + q, n = 0, i = dd.indexOf(p);
+      if (q.length < 5) { p = ' ' + q + ' '; i = dd.indexOf(p); }
+      while (i >= 0) { n++; i = dd.indexOf(p, i + p.length - 1); }
+      return n;
+    }
+    var weights = qs.map(function (q) {
+      var df = 0;
+      docs.forEach(function (dd) { if (cnt(dd, q) > 0) df++; });
+      return df > 0 ? Math.pow(Math.log(1 + N / df), 1.4) : 0;
+    });
+    var avg = 0; docs.forEach(function (d) { avg += d.length; }); avg /= Math.max(1, N);
+    var scored = chunks.map(function (c, idx) {
+      var dd = docs[idx], score = 0, matched = 0;
+      qs.forEach(function (q, i) {
+        var t = cnt(dd, q);
+        if (weights[i] > 0 && t > 0) { matched++; score += weights[i] * (1 + 0.25 * Math.log(t)); }
+        if (weights[i] > 0.9 && cnt(heads[idx], q) > 0) score += weights[i] * 1.5;
+      });
+      if (qs.length > 1) score *= (0.55 + 0.45 * matched / qs.length);
+      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 1.2 * (weights[i] + weights[i + 1]); }
+      if (c.indexOf('السؤال') >= 0 || c.indexOf('....') >= 0) score *= 0.6;
+      if (c.indexOf('[مقدمة') === 0 && !meta) score *= 0.3;
+      if (opts.lesson && c.indexOf(opts.lesson) >= 0) score *= 2.2;
+      return { c: c, score: score };
+    });
+    scored.sort(function (a, b) { return b.score - a.score; });
+    return scored.filter(function (s) { return s.score > 0; }).slice(0, topN).map(function (s) { return s.c; });
+  }
+
 
   var BOT_SPECIALTIES = {
     poetry: { name: 'بوت الشعر والأدب', prompt: 'تخصصك: الشعر والأدب العربي. تساعد تشرح أبيات، تقترح قوافي، تحلل معنى قصيدة، أو تناقش أسلوب كاتب.' },
@@ -513,14 +598,42 @@ async function main() {
           var SYN = { 'المقصود': 'مفهوم تعريف', 'معنى': 'مفهوم تعريف', 'عناصر': 'جوانب أسس', 'عناصرها': 'جوانب أسس', 'مقومات': 'أسس جوانب', 'مميزات': 'خصائص', 'فوائد': 'ثمرات أهمية' };
           var qx = qForSearch.split(' ').map(function (w) { return SYN[w] || ''; }).join(' ').trim();
           if (qx) qForSearch = qForSearch + ' ' + qx;
-          var picked = pickRelevantChunks(chunks, qForSearch, intent.n);
+          var v2 = body.v2 !== false;
+          var lessonTitle = String(body.lesson || '').slice(0, 120);
+          var ctx = (v2 && body.ctx && typeof body.ctx === 'object') ? body.ctx : null;
+          var picked;
+          if (v2) {
+            var qs2 = qForSearch;
+            if (ctx) { qs2 = String(ctx.q || '').slice(0, 400) + ' ' + String(ctx.a || '').slice(0, 200); intent = { k: 'mistake', n: 3, label: 'شرح سبب خطأ الطالب في سؤال اختبار' }; }
+            var pool = chunks;
+            if (lessonTitle && body.lock) { var fl = chunks.filter(function (c) { return c.split('\n')[0].indexOf(lessonTitle) >= 0; }); if (fl.length) pool = fl; }
+            picked = pickRelevantChunks2(pool, qs2, intent.n + (intent.k === 'fact' ? 1 : 0), { lesson: lessonTitle });
+          } else { picked = pickRelevantChunks(chunks, qForSearch, intent.n); }
           if (!picked.length) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ reply: 'ما لقيت هالمعلومة في الكتاب. جرّب تعيد صياغة السؤال أو اكتب اسم الدرس.', suggestions: [] })); return; }
           var context = picked.length ? ('مقاطع من كتاب مادة ' + STUDY_SUBJECTS[subject] + ':\n' + picked.map(function (c, i) { return '(' + (i + 1) + ') ' + c; }).join('\n\n') + '\n\n') : '';
           var histTxt = hist.length ? ('المحادثة السابقة:\n' + hist.map(function (h) { return (h && h.r === 'u' ? 'الطالب: ' : 'المساعد: ') + String((h && h.t) || '').slice(0, 700); }).join('\n') + '\n\n') : '';
           var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
-          var ckey = (redisClient && !hist.length && picked.length) ? ('sc2:' + subject + ':' + chunks.length + ':' + question.replace(/\s+/g, ' ').trim()) : null;
+          var extra = '';
+          if (ctx) {
+            extra = '\nسؤال الاختبار: ' + String(ctx.q || '').slice(0, 500) + '\nإجابة الطالب: ' + String(ctx.ua || '(ما أجاب)').slice(0, 300) + '\nالإجابة الصحيحة: ' + String(ctx.a || '').slice(0, 300) + '\nالمطلوب: اشرح للطالب باختصار (4 أسطر كحد أقصى) لماذا إجابته غير صحيحة وما الصحيح، اعتماداً على نص الكتاب فقط، مع اقتباس الجملة الداعمة حرفياً ورقم الصفحة. لا تخترع معلومة، ولا تضف أي تفصيل (مثل الثواب والعقاب أو الأمثلة) غير مكتوب حرفياً في المقاطع. إن كانت الإجابة الصحيحة غير مدعومة بالمقاطع قل ذلك.';
+          }
+          var ckey = (redisClient && !hist.length && picked.length && !ctx) ? ((v2 ? 'sc3:' : 'sc2:') + subject + ':' + chunks.length + ':' + lessonTitle + ':' + (body.lock ? 1 : 0) + ':' + question.replace(/\s+/g, ' ').trim()) : null;
+          var addRefs = function (sh) {
+            if (!v2 || !sh || !sh.reply) return;
+            if (/^\s*ما لقيت/.test(sh.reply)) { sh.reply = sh.reply.replace(/\s*\(ص\s*[\d؟]+\)/g, ''); return; }
+            var seen = {}, refs = [], re = /\(ص\s*(\d+)\)/g, m;
+            while ((m = re.exec(sh.reply)) && refs.length < 4) {
+              var pg = m[1]; if (seen[pg]) continue; seen[pg] = 1;
+              for (var ci = 0; ci < picked.length; ci++) {
+                var parts = picked[ci].split(/\[ص\s*([^\]]+)\]/);
+                for (var pi = 1; pi < parts.length; pi += 2) { if (parts[pi].trim() === pg) { refs.push({ p: +pg, t: String(parts[pi + 1] || '').replace(/\(نصوص داخل[^)]*\)\s*/g, '').replace(/\s+\n/g, '\n').trim().slice(0, 900) }); pi = 1e9; ci = 1e9; } }
+              }
+            }
+            if (refs.length) sh.refs = refs;
+          };
           var go = function () {
-            callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question, res, STUDY_SUBJECTS[subject], function (sh) {
+            callGemini(sys, context + histTxt + 'نوع الطلب: ' + intent.label + '\nسؤال الطالب: ' + question + extra, res, STUDY_SUBJECTS[subject], function (sh) {
+              addRefs(sh);
               if (ckey && sh && sh.reply && sh.reply.length > 80 && sh.reply.indexOf('ما لقيت') !== 0 && !/[«“(:]$/.test(sh.reply.trim())) { redisClient.set(ckey, JSON.stringify(sh), 'EX', 604800).catch(function () {}); }
             });
           };
