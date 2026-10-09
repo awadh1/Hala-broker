@@ -611,7 +611,7 @@ async function main() {
           var sys = STUDY_BASE_SYSTEM + ' مادتك: ' + STUDY_SUBJECTS[subject] + '.' + (picked.length ? '' : ' ما لقيت مقاطع مرتبطة بالسؤال في الكتاب المخزّن، فاعتذر وقل ما لقيت الجواب في الكتاب واقترح على الطالب يعيد صياغة سؤاله أو يذكر اسم الدرس.');
           var extra = '';
           if (ctx) {
-            extra = '\nسؤال الاختبار: ' + String(ctx.q || '').slice(0, 500) + '\nإجابة الطالب: ' + String(ctx.ua || '(ما أجاب)').slice(0, 300) + '\nالإجابة الصحيحة: ' + String(ctx.a || '').slice(0, 300) + '\nالمطلوب: اشرح للطالب باختصار (4 أسطر كحد أقصى) لماذا إجابته غير صحيحة وما الصحيح، اعتماداً على نص الكتاب فقط، مع اقتباس الجملة الداعمة حرفياً ورقم الصفحة. لا تخترع معلومة. إن كانت الإجابة الصحيحة غير مدعومة بالمقاطع قل ذلك.';
+            extra = '\nسؤال الاختبار: ' + String(ctx.q || '').slice(0, 500) + '\nإجابة الطالب: ' + String(ctx.ua || '(ما أجاب)').slice(0, 300) + '\nالإجابة الصحيحة: ' + String(ctx.a || '').slice(0, 300) + '\nالمطلوب: اشرح للطالب باختصار (4 أسطر كحد أقصى) لماذا إجابته غير صحيحة وما الصحيح، اعتماداً على نص الكتاب فقط، مع اقتباس الجملة الداعمة حرفياً ورقم الصفحة. لا تخترع معلومة، ولا تضف أي تفصيل (مثل الثواب والعقاب أو الأمثلة) غير مكتوب حرفياً في المقاطع. إن كانت الإجابة الصحيحة غير مدعومة بالمقاطع قل ذلك.';
           }
           var ckey = (redisClient && !hist.length && picked.length && !ctx) ? ((v2 ? 'sc3:' : 'sc2:') + subject + ':' + chunks.length + ':' + lessonTitle + ':' + (body.lock ? 1 : 0) + ':' + question.replace(/\s+/g, ' ').trim()) : null;
           var addRefs = function (sh) {
@@ -621,7 +621,7 @@ async function main() {
               var pg = m[1]; if (seen[pg]) continue; seen[pg] = 1;
               for (var ci = 0; ci < picked.length; ci++) {
                 var parts = picked[ci].split(/\[ص\s*([^\]]+)\]/);
-                for (var pi = 1; pi < parts.length; pi += 2) { if (parts[pi].trim() === pg) { refs.push({ p: +pg, t: String(parts[pi + 1] || '').replace(/\s+\n/g, '\n').trim().slice(0, 900) }); pi = 1e9; ci = 1e9; } }
+                for (var pi = 1; pi < parts.length; pi += 2) { if (parts[pi].trim() === pg) { refs.push({ p: +pg, t: String(parts[pi + 1] || '').replace(/\(نصوص داخل[^)]*\)\s*/g, '').replace(/\s+\n/g, '\n').trim().slice(0, 900) }); pi = 1e9; ci = 1e9; } }
               }
             }
             if (refs.length) sh.refs = refs;
