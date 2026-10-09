@@ -105,7 +105,7 @@ async function main() {
   var STUDY_SUBJECTS = { science: 'العلوم', social: 'الاجتماعيات', islamic: 'التربية الإسلامية' };
   var STUDY_BASE_SYSTEM = 'أنت «المساعد الدراسي»، معلّم كويتي لطلاب الصف الثامن. مصدرك الوحيد هو المقاطع المرفقة من الكتاب (العلامة [ص N] داخل المقطع تعني أن كل ما بعدها حتى العلامة التالية هو من الصفحة N المطبوعة في الكتاب. لما تذكر رقم الصفحة خذه من أقرب علامة [ص N] تسبق المعلومة نفسها وبين قوسين مثل (ص 31)، ولا تخمّن رقماً أبداً، وإذا كانت العلامة [ص ؟] فلا تذكر رقم صفحة). ' +
     'قواعد صارمة: ' +
-    '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب. ' +
+    '1) لا تضف أي معلومة غير موجودة في المقاطع، ولا تستخدم معرفتك العامة. لو ما لقيت الجواب فيها قل: «ما لقيت هالمعلومة في المقاطع اللي عندي من الكتاب» واقترح الدرس القريب باسمه فقط بدون رقم صفحة. ' +
     '2) سؤال تعريف أو معلومة محددة: انقل نص الكتاب حرفياً بدون تغيير وبدون مقدمة. المقاطع مقروءة بالـOCR، فلو كلمة فيها خطأ قراءة واضح صححها إملائياً فقط. الأرقام والسنوات والتواريخ والقياسات انقلها كما هي في المقاطع بدون أي تغيير، ولا تستبدلها برقم من معرفتك العامة. ' +
     '3) اشرح/وضح/لخص/فهمني: اشرح الدرس خطوة خطوة بلغة سهلة لطالب الصف الثامن، في نقاط قصيرة مرقمة، مع الحفاظ على كل معلومة ورقم ومصطلح من الكتاب وإبراز المصطلحات بـ **، وبعده سطر «الخلاصة». ' +
     '4) أسئلة التمارين (أكمل، علل، قارن، صح أو خطأ، اختر، فسّر، ما سبب...): حلّ السؤال اعتماداً على نص الكتاب فقط. اكتب الجواب النهائي في جملة أو جملتين فقط بدون أي إضافة من عندك، ثم سطراً جديداً يبدأ بـ «من الكتاب:» ونص الكتاب الداعم له حرفياً مع رقم الصفحة. ممنوع الشرح الزائد أو المعلومات من خارج المقاطع، ولو ما لقيت الإجابة في المقاطع لا تخمّن. لو السؤال حسابي طبّق قانون الكتاب وبيّن الخطوات. ' +
@@ -239,10 +239,10 @@ async function main() {
       }
       return w;
     }
-    var STOP = ' ' + nrm('ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل تعريف عرف مفهوم معنى المقصود المراد اعط اعطني قل لي شنو شو ايش وش ويش شلون وين اللي اللى تبي ابي ابغى بغيت نسمي نسميه يسمى تسمى تصير يصير صار كم مره مرة جدا اي اىي ايه هاي هذي ذي ذا هذاك هناك عند بين بس لو اذا إذا ثم او أو مع هم هن نحن انا انت كان كانت يكون تكون يكن لا لم لن قد ثاني ناحيه ناحية جهة طريقة نوع حق مال تاخذ ياخذ يسوي تسوي') + ' ';
+    var STOP = ' ' + nrm('ما هو هي ماذا من في على الى عن هل كيف لماذا ليش اشرح وضح فهمني اذكر عدد هذا هذه التي الذي وما ماهو ماهي ان كل تعريف عرف مفهوم معنى المقصود المراد اعط اعطني قل لي شنو شو ايش وش ويش شلون وين اللي اللى تبي ابي ابغى بغيت نسمي نسميه يسمى تسمى تصير يصير صار كم مره مرة جدا اي اىي ايه هاي هذي ذي ذا هذاك هناك عند بين بس لو اذا إذا ثم او أو مع هم هن نحن انا انت كان كانت يكون تكون يكن لا لم لن قد ثاني ناحيه ناحية جهة طريقة نوع حق مال تاخذ ياخذ يسوي تسوي كامل كاملا كامله كامل تفصيل بالتفصيل تفصيلا ببساطه بسيط مختصر باختصار اختصار شرح اشرحه اشرحها وضحه وضحها لخصه لخصها فهمني ممكن لو سمحت مجال مجالات موضوع نقطه معلومات معلومه شي شيء اشياء') + ' ';
     var STOPS = {}; STOP.split(' ').forEach(function (w) { if (w) { STOPS[w] = 1; STOPS[stem(w)] = 1; } });
     var qs = [];
-    toks(question).forEach(function (w) { if (STOPS[w]) return; var st = stem(w); if (st.length >= 2 && !STOPS[st]) qs.push(st); });
+    toks(question).forEach(function (w) { if (STOPS[w]) return; if (w.length > 4 && (STOPS[w.slice(0, -1)] || STOPS[w.slice(0, -2)])) return; var st = stem(w); if (st.length >= 2 && !STOPS[st]) qs.push(st); });
     var heads = [], docs = chunks.map(function (c) {
       var hm = c.match(/^\[([^\]\n]*[^\]\n]*)\]/); var head = '';
       var firstLine = c.split('\n')[0];
@@ -250,6 +250,7 @@ async function main() {
       heads.push(' ' + toks(head).map(stem).join(' ') + ' ');
       return ' ' + toks(c).map(stem).join(' ') + ' ';
     });
+    var meta = /مقدمه|مقدمة|تاليف|فهرس|المحتويات|الكتاب/.test(nrm(question));
     var N = chunks.length;
     function cnt(dd, q) {
       var p = ' ' + q, n = 0, i = dd.indexOf(p);
@@ -260,7 +261,7 @@ async function main() {
     var weights = qs.map(function (q) {
       var df = 0;
       docs.forEach(function (dd) { if (cnt(dd, q) > 0) df++; });
-      return df > 0 ? Math.log(1 + N / df) : 0;
+      return df > 0 ? Math.pow(Math.log(1 + N / df), 1.4) : 0;
     });
     var avg = 0; docs.forEach(function (d) { avg += d.length; }); avg /= Math.max(1, N);
     var scored = chunks.map(function (c, idx) {
@@ -268,17 +269,19 @@ async function main() {
       qs.forEach(function (q, i) {
         var t = cnt(dd, q);
         if (weights[i] > 0 && t > 0) { matched++; score += weights[i] * (1 + 0.25 * Math.log(t)); }
-        if (weights[i] > 0 && cnt(heads[idx], q) > 0) score += weights[i] * 1.2;
+        if (weights[i] > 0.9 && cnt(heads[idx], q) > 0) score += weights[i] * 1.5;
       });
       if (qs.length > 1) score *= (0.55 + 0.45 * matched / qs.length);
-      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 3; }
+      for (var i = 0; i + 1 < qs.length; i++) { if (dd.indexOf(' ' + qs[i] + ' ' + qs[i + 1]) >= 0) score += 1.2 * (weights[i] + weights[i + 1]); }
       if (c.indexOf('السؤال') >= 0 || c.indexOf('....') >= 0) score *= 0.6;
+      if (c.indexOf('[مقدمة') === 0 && !meta) score *= 0.3;
       if (opts.lesson && c.indexOf(opts.lesson) >= 0) score *= 2.2;
       return { c: c, score: score };
     });
     scored.sort(function (a, b) { return b.score - a.score; });
     return scored.filter(function (s) { return s.score > 0; }).slice(0, topN).map(function (s) { return s.c; });
   }
+
 
   var BOT_SPECIALTIES = {
     poetry: { name: 'بوت الشعر والأدب', prompt: 'تخصصك: الشعر والأدب العربي. تساعد تشرح أبيات، تقترح قوافي، تحلل معنى قصيدة، أو تناقش أسلوب كاتب.' },
@@ -617,6 +620,7 @@ async function main() {
           var ckey = (redisClient && !hist.length && picked.length && !ctx) ? ((v2 ? 'sc3:' : 'sc2:') + subject + ':' + chunks.length + ':' + lessonTitle + ':' + (body.lock ? 1 : 0) + ':' + question.replace(/\s+/g, ' ').trim()) : null;
           var addRefs = function (sh) {
             if (!v2 || !sh || !sh.reply) return;
+            if (/^\s*ما لقيت/.test(sh.reply)) { sh.reply = sh.reply.replace(/\s*\(ص\s*[\d؟]+\)/g, ''); return; }
             var seen = {}, refs = [], re = /\(ص\s*(\d+)\)/g, m;
             while ((m = re.exec(sh.reply)) && refs.length < 4) {
               var pg = m[1]; if (seen[pg]) continue; seen[pg] = 1;
