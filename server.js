@@ -563,6 +563,19 @@ async function main() {
       return;
   }
 
+    if (req.method === 'POST' && req.url === '/admin/info') {
+      var chunksIN = [];
+      req.on('data', function (c) { chunksIN.push(c); if (Buffer.concat(chunksIN).length > 2000) req.destroy(); });
+      req.on('end', function () {
+        var nb; try { nb = JSON.parse(Buffer.concat(chunksIN).toString('utf8') || '{}'); } catch (e) { nb = {}; }
+        if (!process.env.ADMIN_KEY || nb.key !== process.env.ADMIN_KEY) { res.writeHead(403, { 'content-type': 'application/json' }); res.end('{"error":"forbidden"}'); return; }
+        var info = { redis: !!redisClient, redis_status: redisClient ? redisClient.status : null, uptime_s: Math.round(process.uptime()), manifest: !!process.env.STUDY_MANIFEST_URL, token: !!process.env.GITHUB_DATA_TOKEN };
+        Promise.all(Object.keys(STUDY_SUBJECTS).map(function (sub) { return loadStudyChunks(sub).then(function (a) { info['chunks_' + sub] = a.length; }); })).then(function () {
+          res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(info));
+        }).catch(function () { res.writeHead(500, { 'content-type': 'application/json' }); res.end('{"error":"info failed"}'); });
+      });
+      return;
+    }
     if (req.method === 'POST' && (req.url === '/study/import' || req.url === '/quiz/import' || req.url === '/admin/restore')) {
       var chunksIM = [];
       req.on('data', function (c) { chunksIM.push(c); if (Buffer.concat(chunksIM).length > 4000) req.destroy(); });
