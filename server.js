@@ -147,6 +147,79 @@ async function main() {
     if (redisClient) return redisClient.lrange('study:' + subject, 0, -1);
     return Promise.resolve((MEM_STUDY[subject] || []).slice());
   }
+
+  // ===== استيراد البيانات من رابط (GitHub) بدل الرفع المقطّع، واسترجاع تلقائي إذا ضاعت من Redis =====
+  var HTTPS_MOD = require('https');
+  function fetchRemoteJson(url, cb) {
+    var u;
+    try { u = new URL(String(url)); } catch (e) { return cb(new Error('bad url')); }
+    if (u.protocol !== 'https:' || ['raw.githubusercontent.com', 'gist.githubusercontent.com'].indexOf(u.hostname) < 0) return cb(new Error('host not allowed'));
+    var headers = { 'user-agent': 'hala-broker', 'accept': 'application/json,text/plain' };
+    if (process.env.GITHUB_DATA_TOKEN) headers.authorization = 'Bearer ' + process.env.GITHUB_DATA_TOKEN;
+    var done = false, fin = function (e, v) { if (done) return; done = true; cb(e, v); };
+    var rq = HTTPS_MOD.get({ hostname: u.hostname, path: u.pathname + u.search, headers: headers, timeout: 20000 }, function (r) {
+      if (r.statusCode !== 200) { r.resume(); return fin(new Error('status ' + r.statusCode)); }
+      var parts = [], n = 0;
+      r.on('data', function (c) { n += c.length; if (n > 8000000) { rq.destroy(); return fin(new Error('too big')); } parts.push(c); });
+      r.on('end', function () { try { fin(null, JSON.parse(Buffer.concat(parts).toString('utf8'))); } catch (e) { fin(new Error('bad json')); } });
+    });
+    rq.on('timeout', function () { rq.destroy(); fin(new Error('timeout')); });
+    rq.on('error', function (e) { fin(e); });
+  }
+  function importStudy(subject, url) {
+    return new Promise(function (resolve, reject) {
+      fetchRemoteJson(url, function (e, v) {
+        if (e) return reject(e);
+        var arr = Array.isArray(v) ? v : (v && Array.isArray(v[subject]) ? v[subject] : (v && Array.isArray(v.chunks) ? v.chunks : null));
+        if (!arr) return reject(new Error('no array'));
+        arr = arr.map(function (x) { return String(x || '').trim().slice(0, 4000); }).filter(function (x) { return x; });
+        if (!arr.length) return reject(new Error('empty'));
+        clearStudy(subject).then(function () {
+          var chain = Promise.resolve();
+          arr.forEach(function (t) { chain = chain.then(function () { return addStudyChunk(subject, t); }); });
+          return chain;
+        }).then(function () { resolve(arr.length); }).catch(reject);
+      });
+    });
+  }
+  function importQuiz(subject, url) {
+    return new Promise(function (resolve, reject) {
+      fetchRemoteJson(url, function (e, v) {
+        if (e) return reject(e);
+        var arr = Array.isArray(v) ? v : (v && Array.isArray(v.items) ? v.items : null);
+        if (!arr || !arr.length) return reject(new Error('no array'));
+        var j = JSON.stringify(arr);
+        MEM_QUIZ[subject] = j;
+        (redisClient ? redisClient.set('quiz:' + subject, j) : Promise.resolve()).then(function () { resolve(arr.length); }).catch(reject);
+      });
+    });
+  }
+  // manifest: { "science": {"study": "https://raw...", "quiz": "https://raw..."}, ... }
+  function restoreFromManifest(force) {
+    var murl = process.env.STUDY_MANIFEST_URL;
+    if (!murl) return Promise.resolve({ skipped: 'no manifest url' });
+    return new Promise(function (resolve) {
+      fetchRemoteJson(murl, function (e, m) {
+        if (e || !m) return resolve({ error: String(e && e.message || 'manifest') });
+        var report = {}, chain = Promise.resolve();
+        Object.keys(STUDY_SUBJECTS).forEach(function (sub) {
+          var ent = m[sub]; if (!ent) return;
+          chain = chain.then(function () {
+            var hasS = (!redisClient) ? Promise.resolve((MEM_STUDY[sub] || []).length) : redisClient.llen('study:' + sub);
+            return hasS.then(function (n) {
+              if (ent.study && (force || !n)) return importStudy(sub, ent.study).then(function (c) { report[sub + '_study'] = c; });
+            }).catch(function (er) { report[sub + '_study'] = 'err ' + er.message; }).then(function () {
+              var hasQ = (!redisClient) ? Promise.resolve(MEM_QUIZ[sub] ? 1 : 0) : redisClient.exists('quiz:' + sub);
+              return hasQ.then(function (q) {
+                if (ent.quiz && (force || !q)) return importQuiz(sub, ent.quiz).then(function (c) { report[sub + '_quiz'] = c; });
+              });
+            }).catch(function (er) { report[sub + '_quiz'] = 'err ' + er.message; });
+          });
+        });
+        chain.then(function () { resolve(report); });
+      });
+    });
+  }
   function pickRelevantChunks(chunks, question, topN) {
     function nrm(s) {
       var o = '';
@@ -490,6 +563,23 @@ async function main() {
       return;
   }
 
+    if (req.method === 'POST' && (req.url === '/study/import' || req.url === '/quiz/import' || req.url === '/admin/restore')) {
+      var chunksIM = [];
+      req.on('data', function (c) { chunksIM.push(c); if (Buffer.concat(chunksIM).length > 4000) req.destroy(); });
+      req.on('end', function () {
+        var ib, isRes = req.url;
+        try { ib = JSON.parse(Buffer.concat(chunksIM).toString('utf8') || '{}'); } catch (e) { res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"error":"bad json"}'); return; }
+        if (!process.env.ADMIN_KEY || ib.key !== process.env.ADMIN_KEY) { res.writeHead(403, { 'content-type': 'application/json' }); res.end('{"error":"forbidden"}'); return; }
+        var ok = function (o) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+        var bad = function (e) { res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: String(e && e.message || e) })); };
+        if (isRes === '/admin/restore') { restoreFromManifest(!!ib.force).then(ok).catch(bad); return; }
+        var sb = String(ib.subject || '').trim();
+        if (!STUDY_SUBJECTS[sb] || !ib.url) { res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"error":"bad data"}'); return; }
+        (isRes === '/study/import' ? importStudy(sb, ib.url) : importQuiz(sb, ib.url)).then(function (n) { ok({ ok: true, n: n }); }).catch(bad);
+      });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/study/add') {
       var chunksSA = [];
       req.on('data', function (c) { chunksSA.push(c); if (Buffer.concat(chunksSA).length > 60000) req.destroy(); });
@@ -785,6 +875,7 @@ async function main() {
     aedes.handle(stream, req);
   });
 
+  setTimeout(function () { restoreFromManifest(false).then(function (r) { console.log('[restore]', JSON.stringify(r)); }).catch(function () {}); }, 4000);
   httpServer.listen(PORT, () => {
     console.log('🫖 بروكر هلا شات شغّال على المنفذ', PORT);
   });
