@@ -371,7 +371,7 @@ async function main() {
   const httpServer = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-translate-pass');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     if (req.method === 'GET' && req.url === '/ice') {
@@ -670,6 +670,45 @@ async function main() {
           if (ok1) { gfin(true, r1); return; }
           tryGroq(gsys, gtxt, function (ok2, r2) { gfin(ok2, r2); });
         });
+      });
+      return;
+    }
+
+    // ===== مترجم الروايات: وسيط لمفتاح Gemini منفصل عن المساعد (TRANSLATE_GEMINI_KEY + TRANSLATE_PASS) =====
+    if ((req.method === 'GET' && req.url === '/translate/models') || (req.method === 'POST' && req.url === '/translate/gen')) {
+      var jsonT = function (code, obj) { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      if (!process.env.TRANSLATE_GEMINI_KEY || !process.env.TRANSLATE_PASS) { jsonT(503, { error: 'المترجم غير مفعّل على السيرفر' }); return; }
+      if (String(req.headers['x-translate-pass'] || '') !== process.env.TRANSLATE_PASS) { jsonT(401, { error: 'رمز الدخول غلط' }); return; }
+      var whoT = 'tr:' + (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
+      var nowT = Date.now();
+      var listT = (AQUA_LIMIT[whoT] = (AQUA_LIMIT[whoT] || []).filter(function (x) { return nowT - x < 60000; }));
+      if (listT.length >= 60) { jsonT(429, { error: 'طلبات كثيرة، انتظر شوي' }); return; }
+      listT.push(nowT);
+      if (req.method === 'GET') {
+        fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': process.env.TRANSLATE_GEMINI_KEY } })
+          .then(function (r) { return r.text().then(function (tx) { return { status: r.status, tx: tx }; }); })
+          .then(function (o) {
+            if (o.status !== 200) { res.writeHead(o.status, { 'content-type': 'application/json' }); res.end(o.tx); return; }
+            var ms = (JSON.parse(o.tx).models || []).filter(function (m) { return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0 && /gemini/i.test(m.name) && !/embed|tts|image|live|audio|vision|robotics|computer|learnlm|aqa|gemma/i.test(m.name); }).map(function (m) { return m.name.replace(/^models\//, ''); });
+            jsonT(200, { models: ms });
+          }).catch(function () { jsonT(502, { error: 'تعذّر الاتصال بجوجل' }); });
+        return;
+      }
+      var chT = [], szT = 0;
+      req.on('data', function (c) { szT += c.length; if (szT > 400000) { req.destroy(); return; } chT.push(c); });
+      req.on('end', function () {
+        var bt;
+        try { bt = JSON.parse(Buffer.concat(chT).toString('utf8') || '{}'); } catch (e) { jsonT(400, { error: 'صيغة غير صحيحة' }); return; }
+        var mdl = String(bt.model || '');
+        if (!/^gemini-[a-z0-9.\-]+$/i.test(mdl) || !bt.body || typeof bt.body !== 'object') { jsonT(400, { error: 'طلب غير صحيح' }); return; }
+        var ctl = new AbortController();
+        var killT = setTimeout(function () { ctl.abort(); }, 170000);
+        fetch('https://generativelanguage.googleapis.com/v1beta/models/' + mdl + ':generateContent', {
+          method: 'POST', signal: ctl.signal,
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.TRANSLATE_GEMINI_KEY },
+          body: JSON.stringify(bt.body)
+        }).then(function (r) { return r.text().then(function (tx) { clearTimeout(killT); res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(tx); }); })
+          .catch(function () { clearTimeout(killT); jsonT(504, { error: 'انتهت مهلة الطلب' }); });
       });
       return;
     }
