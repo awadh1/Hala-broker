@@ -677,7 +677,8 @@ async function main() {
     // ===== مترجم الروايات: وسيط لمفتاح Gemini منفصل عن المساعد (TRANSLATE_GEMINI_KEY + TRANSLATE_PASS) =====
     if ((req.method === 'GET' && req.url === '/translate/models') || (req.method === 'POST' && req.url === '/translate/gen')) {
       var jsonT = function (code, obj) { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
-      if (!process.env.TRANSLATE_GEMINI_KEY || !process.env.TRANSLATE_PASS) { jsonT(503, { error: 'المترجم غير مفعّل على السيرفر' }); return; }
+      var TKEY = process.env.TRANSLATE_GEMINI_KEY || process.env.GEMINI_API_KEY;
+      if (!TKEY || !process.env.TRANSLATE_PASS) { jsonT(503, { error: 'المترجم غير مفعّل على السيرفر' }); return; }
       if (String(req.headers['x-translate-pass'] || '') !== process.env.TRANSLATE_PASS) { jsonT(401, { error: 'رمز الدخول غلط' }); return; }
       var whoT = 'tr:' + (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
       var nowT = Date.now();
@@ -685,7 +686,7 @@ async function main() {
       if (listT.length >= 60) { jsonT(429, { error: 'طلبات كثيرة، انتظر شوي' }); return; }
       listT.push(nowT);
       if (req.method === 'GET') {
-        fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': process.env.TRANSLATE_GEMINI_KEY } })
+        fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': TKEY } })
           .then(function (r) { return r.text().then(function (tx) { return { status: r.status, tx: tx }; }); })
           .then(function (o) {
             if (o.status !== 200) { res.writeHead(o.status, { 'content-type': 'application/json' }); res.end(o.tx); return; }
@@ -705,7 +706,7 @@ async function main() {
         var killT = setTimeout(function () { ctl.abort(); }, 170000);
         fetch('https://generativelanguage.googleapis.com/v1beta/models/' + mdl + ':generateContent', {
           method: 'POST', signal: ctl.signal,
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.TRANSLATE_GEMINI_KEY },
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': TKEY },
           body: JSON.stringify(bt.body)
         }).then(function (r) { return r.text().then(function (tx) { clearTimeout(killT); res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(tx); }); })
           .catch(function () { clearTimeout(killT); jsonT(504, { error: 'انتهت مهلة الطلب' }); });
