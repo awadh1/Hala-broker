@@ -678,8 +678,9 @@ async function main() {
     if ((req.method === 'GET' && req.url === '/translate/models') || (req.method === 'POST' && req.url === '/translate/gen')) {
       var jsonT = function (code, obj) { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
       var TKEY = process.env.TRANSLATE_GEMINI_KEY || process.env.GEMINI_API_KEY;
-      if (!TKEY || !process.env.TRANSLATE_PASS) { jsonT(503, { error: 'المترجم غير مفعّل على السيرفر' }); return; }
-      if (String(req.headers['x-translate-pass'] || '') !== process.env.TRANSLATE_PASS) { jsonT(401, { error: 'رمز الدخول غلط' }); return; }
+      if (!TKEY) { jsonT(503, { error: 'المترجم غير مفعّل على السيرفر' }); return; }
+      var orgT = String(req.headers.origin || '');
+      if (orgT !== 'https://awadh1.github.io' && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(orgT)) { jsonT(403, { error: 'غير مسموح' }); return; }
       var whoT = 'tr:' + (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
       var nowT = Date.now();
       var listT = (AQUA_LIMIT[whoT] = (AQUA_LIMIT[whoT] || []).filter(function (x) { return nowT - x < 60000; }));
