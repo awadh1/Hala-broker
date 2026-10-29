@@ -730,8 +730,8 @@ async function main() {
         var who = 'study:' + subject;
         var now = Date.now();
         var list = (AQUA_LIMIT[who] = (AQUA_LIMIT[who] || []).filter(function (t) { return now - t < 60000; }));
-        if (list.length >= 12) {
-          res.writeHead(429, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'أسئلة كثيرة بوقت قصير، انتظر شوي' })); return;
+        if (list.length >= 90) {
+          res.writeHead(429, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'المساعد مزدحم الحين، جرّب بعد دقيقة.' })); return;
         }
         list.push(now);
         loadStudyChunks(subject).then(function (chunks) {
