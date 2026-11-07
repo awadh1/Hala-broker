@@ -618,7 +618,7 @@ async function main() {
 
     if (req.method === 'POST' && req.url === '/quiz/add') {
       var chunksQA = [];
-      req.on('data', function (c) { chunksQA.push(c); if (Buffer.concat(chunksQA).length > 600000) req.destroy(); });
+      req.on('data', function (c) { chunksQA.push(c); if (Buffer.concat(chunksQA).length > 3000000) req.destroy(); });
       req.on('end', function () {
         var qb;
         try { qb = JSON.parse(Buffer.concat(chunksQA).toString('utf8') || '{}'); } catch (e) {
